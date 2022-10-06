@@ -114,11 +114,13 @@ class BaseReducedBasis:
 
     def __getitem__(self, item):
         # get a new reduced basis with the sub-sampled elements given by the slicing.
-        _, basis = sort_orthogonalize_base(
-            get_high_contrast_coefficient(self.a[item]),
-            np.reshape(self.basis[item], (-1, self.ambient_space_dim))
+        return BaseReducedBasis(basis=self.basis[item], a=self.a[item])
+
+    def orthonormalize(self):
+        _, self.basis = sort_orthogonalize_base(
+            get_high_contrast_coefficient(self.a),
+            np.reshape(self.basis, (-1, self.ambient_space_dim))
         )
-        return BaseReducedBasis(basis=basis, a=self.a[item])
 
 
 class ReducedBasisGreedy(BaseReducedBasis):
@@ -156,19 +158,37 @@ class ReducedBasisGreedy(BaseReducedBasis):
         super().__init__(basis=basis, a=a)
 
 
+def get_inf_solutions_starting_basis(solutions2train, a2train):
+    num_hc_blocks = np.sum(np.array(a2train) == INFINIT_A, axis=(-1, -2))
+    chosen_ix = np.ravel(np.where(num_hc_blocks == 1))
+    free_ix = np.ravel(np.where(num_hc_blocks != 1))
+    return solutions2train[chosen_ix], a2train[chosen_ix], solutions2train[free_ix], a2train[free_ix]
+
+
+def get_starting_basis(solutions2train, a2train, add_inf_solutions=True):
+    if add_inf_solutions:
+        # choose the high contrast solutions available in the training set
+        basis, a, solutions2train, a2train = get_inf_solutions_starting_basis(solutions2train, a2train)
+    else:
+        # do nothing, just initialize
+        basis = np.array([])
+        a = np.array([])
+    return basis, a, solutions2train, a2train
+
+
 class ReducedBasisRandom(BaseReducedBasis):
     name = "Random"
-    color = "grey"
+    color = "blue"
     linestyle = "solid"
-    markers = "x"
+    markers = "*"
 
-    def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), **kwargs):
-        high_contrast_a = get_high_contrast_coefficient(a2train)
+    def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), add_inf_solutions=True, seed=42,
+                 **kwargs):
+        basis, a, solutions2train, a2train = get_starting_basis(solutions2train, a2train, add_inf_solutions)
+        np.random.seed(seed)
         chosen_ix = np.random.choice(len(solutions2train), size=n, replace=False)
-        basis = solutions2train[chosen_ix]
-        # orthonormalize for stability and choose the ordering by the contrast of the higher coefficient.
-        # _, basis = sort_orthogonalize_base(high_contrast_a[chosen_ix], np.reshape(basis, (len(basis), -1)))
-        super().__init__(basis=basis, a=a2train[chosen_ix])
+        super().__init__(basis=np.vstack((basis, solutions2train[chosen_ix]))[:n],
+                         a=np.vstack((a, a2train[chosen_ix]))[:n])
 
 
 class ReducedBasisPCA(BaseReducedBasis):
@@ -178,5 +198,6 @@ class ReducedBasisPCA(BaseReducedBasis):
     markers = "x"
 
     def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), **kwargs):
+        raise Exception("Not implemented.")
         pca = PCA(n_components=n).fit(solutions2train)
         super().__init__(basis=pca.components_, a=a2train[chosen_ix])

@@ -9,7 +9,7 @@ import dill
 import numpy as np
 from matplotlib import pylab as plt, cm
 
-from lib.ReducedBasis import ReducedBasisGreedy, INFINIT_A, COLORS, LINESTYLES, MARKERS
+from lib.ReducedBasis import ReducedBasisGreedy, INFINIT_A, COLORS, LINESTYLES, MARKERS, ReducedBasisRandom
 from lib.SolutionsManagers import SolutionsManager
 from src.lib.VizUtils import plot_solutions_together
 
@@ -81,10 +81,10 @@ def get_data(experiment_path):
     return data, data_path
 
 
-def experiment(name, reduced_basis_builder=ReducedBasisGreedy, greedy_for="projection",
+def experiment(name, reduced_basis_builders=[ReducedBasisGreedy], greedy_for="projection",
                mesh_discretization_per_dim=6,
                diff_coef_refinement: int = 30, vn_max_dim: int = 20, num_measurements: int = 50,
-               a2show=None, n2show: int = 1, blocks_geometry=(4, 4),
+               a2show=None, blocks_geometry=(4, 4),
                high_contrast_blocks=[[(1, 1), (1, 2), (2, 1), (2, 2)]],
                recalculate=False, num_cores=1, max_num_samples_offline=10000, seed=42):
     # --------- paths and data ---------- #
@@ -127,52 +127,55 @@ def experiment(name, reduced_basis_builder=ReducedBasisGreedy, greedy_for="proje
     measurements = sm.evaluate_solutions(measurement_points, data["solutions"])
 
     # --------- create reduced basis space ---------- #
-    if reduced_basis_builder.name not in data.keys() or data[reduced_basis_builder.name]["basis"].dim < vn_max_dim:
-        print(f"Creating full reduced basis {reduced_basis_builder.name}")
-        data[reduced_basis_builder.name] = {"errors": {}, "times": {}}
-        data[reduced_basis_builder.name]["time2build"], data[reduced_basis_builder.name]["basis"] = \
-            calculate_time(reduced_basis_builder)(n=vn_max_dim, sm=sm, solutions2train=data["solutions"], a2train=a,
-                                                  optim_method="lsq", greedy_for=greedy_for,
-                                                  solutions2train_h1norm=data["solutions_H1norm"])
-        joblib.dump(data, data_path)
+    for reduced_basis_builder in reduced_basis_builders:
+        if reduced_basis_builder.name not in data.keys() or data[reduced_basis_builder.name]["basis"].dim < vn_max_dim:
+            print(f"Creating full reduced basis {reduced_basis_builder.name}")
+            data[reduced_basis_builder.name] = {"errors": {}, "times": {}}
+            data[reduced_basis_builder.name]["time2build"], data[reduced_basis_builder.name]["basis"] = \
+                calculate_time(reduced_basis_builder)(n=vn_max_dim, sm=sm, solutions2train=data["solutions"], a2train=a,
+                                                      optim_method="lsq", greedy_for=greedy_for,
+                                                      solutions2train_h1norm=data["solutions_H1norm"])
+            joblib.dump(data, data_path)
+    reduced_basis_2show = [rb.name for rb in reduced_basis_builders]
 
     # --------- Calculate errors and statistics ---------- #
     n2try = np.arange(1, vn_max_dim + 1)
     for n in tqdm(n2try, desc="Pre-calculating statistics."):
         print(f"dim(Vn)={n}")
-        if recalculate or n not in data[reduced_basis_builder.name]["errors"].keys():
-            rb = data[reduced_basis_builder.name]["basis"][:n]
+        for rb_name in reduced_basis_2show:
+            if recalculate or n not in data[rb_name]["errors"].keys():
+                rb = data[rb_name]["basis"][:n]
+                rb.orthonormalize()
 
-            se_time, (c, se_approx_solutions) = calculate_time(rb.state_estimation)(
-                sm=sm, measurement_points=measurement_points, measurements=measurements, return_coefs=True)
-            fm_time, fm_approx_solutions = calculate_time(rb.forward_modeling)(sm=sm, a=a)
-            pj_time, pj_approx_solutions = calculate_time(rb.projection)(sm=sm, true_solutions=data["solutions"])
-            inv_time, inv_parameters = calculate_time(rb.parameter_estimation_inverse)(c=c)
-            lin_time, lin_parameters = calculate_time(rb.parameter_estimation_linear)(c=c)
+                se_time, (c, se_approx_solutions) = calculate_time(rb.state_estimation)(
+                    sm=sm, measurement_points=measurement_points, measurements=measurements, return_coefs=True)
+                fm_time, fm_approx_solutions = calculate_time(rb.forward_modeling)(sm=sm, a=a)
+                pj_time, pj_approx_solutions = calculate_time(rb.projection)(sm=sm, true_solutions=data["solutions"])
+                inv_time, inv_parameters = calculate_time(rb.parameter_estimation_inverse)(c=c)
+                lin_time, lin_parameters = calculate_time(rb.parameter_estimation_linear)(c=c)
 
-            fm_error = calculate_time(sm.H10norm)(solutions=fm_approx_solutions - data["solutions"])[1]
-            pj_error = calculate_time(sm.H10norm)(solutions=pj_approx_solutions - data["solutions"])[1]
-            se_error = calculate_time(sm.H10norm)(solutions=se_approx_solutions - data["solutions"])[1]
+                fm_error = calculate_time(sm.H10norm)(solutions=fm_approx_solutions - data["solutions"])[1]
+                pj_error = calculate_time(sm.H10norm)(solutions=pj_approx_solutions - data["solutions"])[1]
+                se_error = calculate_time(sm.H10norm)(solutions=se_approx_solutions - data["solutions"])[1]
 
-            data[reduced_basis_builder.name]["errors"][n] = TypeOfProblems(
-                forward_modeling=fm_error / data["solutions_H1norm"],
-                projection=pj_error / data["solutions_H1norm"],
-                state_estimation=se_error / data["solutions_H1norm"],
-                parameter_estimation_inverse=np.abs(1 / a - 1 / np.array(rb.parameter_estimation_inverse(c))),
-                parameter_estimation_linear=np.abs(1 / a - 1 / np.array(rb.parameter_estimation_linear(c)))
-            )
+                data[rb_name]["errors"][n] = TypeOfProblems(
+                    forward_modeling=fm_error / data["solutions_H1norm"],
+                    projection=pj_error / data["solutions_H1norm"],
+                    state_estimation=se_error / data["solutions_H1norm"],
+                    parameter_estimation_inverse=np.abs(1 / a - 1 / np.array(rb.parameter_estimation_inverse(c))),
+                    parameter_estimation_linear=np.abs(1 / a - 1 / np.array(rb.parameter_estimation_linear(c)))
+                )
 
-            data[reduced_basis_builder.name]["times"][n] = TypeOfProblems(
-                forward_modeling=fm_time,
-                projection=pj_time,
-                state_estimation=se_time,
-                parameter_estimation_inverse=inv_time,
-                parameter_estimation_linear=lin_time
-            )
+                data[rb_name]["times"][n] = TypeOfProblems(
+                    forward_modeling=fm_time,
+                    projection=pj_time,
+                    state_estimation=se_time,
+                    parameter_estimation_inverse=inv_time,
+                    parameter_estimation_linear=lin_time
+                )
 
-            joblib.dump(data, data_path)
+                joblib.dump(data, data_path)
 
-    reduced_basis_tested = [reduced_basis_builder.name]
     # [k for k in data.keys() if k not in ["solutions", "time2calculate_solutions"]]
 
     # --------- ---------- ---------- ---------- #
@@ -181,7 +184,7 @@ def experiment(name, reduced_basis_builder=ReducedBasisGreedy, greedy_for="proje
     error_path_path = Path.joinpath(experiment_path, 'ErrorPath')
     error_path_path.mkdir(parents=True, exist_ok=True)
     for i, type_of_problem in enumerate(TypeOfProblems._fields):
-        for rb_name in reduced_basis_tested:
+        for rb_name in reduced_basis_2show:
             fig, ax = plt.subplots(ncols=1, figsize=(12, 6))
             fig.suptitle(f"{type_of_problem.replace('_', ' ')}")
             ax.set_title(f"Reduced basis: {rb_name}")
@@ -250,7 +253,7 @@ def experiment(name, reduced_basis_builder=ReducedBasisGreedy, greedy_for="proje
     for i, type_of_problem in enumerate(TypeOfProblems._fields):
         fig, ax = plt.subplots(ncols=1, figsize=(12, 6))
         ax.set_title(type_of_problem)
-        for rb_name in reduced_basis_tested:
+        for rb_name in reduced_basis_2show:
             rb_stats = data[rb_name]["errors"]
             calculated_ns = sorted(rb_stats.keys())
             linf = [np.max(rb_stats[n][i]) for n in calculated_ns]
@@ -332,10 +335,10 @@ def gather_experiments(names, high_contrast_blocks_list, reduced_basis_builder=R
 
 if __name__ == "__main__":
     general_params = {
-        "reduced_basis_builder": ReducedBasisGreedy,
+        "reduced_basis_builders": [ReducedBasisGreedy, ReducedBasisRandom],
         "mesh_discretization_per_dim": 20,
         "diff_coef_refinement": 10,  # 30
-        "vn_max_dim": 15,
+        "vn_max_dim": 16,
         "num_measurements": 50,
         "num_cores": 15,
         "max_num_samples_offline": 1000,
@@ -344,49 +347,36 @@ if __name__ == "__main__":
     }
 
     # ---------- 2x2 block geometry ---------- #
-    # experiment(
-    #     name="single_greedy4fm",
-    #     a2show=np.array([INFINIT_A]),
-    #     n2show=3,
-    #     blocks_geometry=(2, 2),
-    #     high_contrast_blocks=[[(0, 0)]],
-    #     greedy_for="forward_modeling",
-    #     **general_params
-    # )
-    # experiment(
-    #     name="single",
-    #     a2show=np.array([INFINIT_A]),
-    #     n2show=3,
-    #     blocks_geometry=(2, 2),
-    #     high_contrast_blocks=[[(0, 0)]],
-    #     **general_params
-    # )
-    # experiment(
-    #     name="opposite2x2",
-    #     a2show=np.array([INFINIT_A]),
-    #     n2show=3,
-    #     blocks_geometry=(2, 2),
-    #     high_contrast_blocks=[[(0, 0), (1, 1)]],
-    #     **general_params
-    # )
-    #
-    # # # ---------- 3x3 block geometry ---------- #
-    # experiment(
-    #     name="opposite4x4",
-    #     a2show=np.array([INFINIT_A]),
-    #     n2show=3,
-    #     blocks_geometry=(4, 4),
-    #     high_contrast_blocks=[[(0, 1), (1, 2)]],
-    #     **general_params
-    # )
-    # experiment(
-    #     name="checkerboard",
-    #     a2show=np.array([INFINIT_A]),
-    #     n2show=3,
-    #     blocks_geometry=(4, 4),
-    #     high_contrast_blocks=[[(0, 0), (0, 2), (1, 1), (1, 3), (2, 0), (2, 2), (3, 1), (3, 3)]],
-    #     **general_params
-    # )
+    experiment(
+        name="single",
+        a2show=np.array([INFINIT_A]),
+        blocks_geometry=(2, 2),
+        high_contrast_blocks=[[(0, 0)]],
+        **general_params
+    )
+    experiment(
+        name="opposite2x2",
+        a2show=np.array([INFINIT_A]),
+        blocks_geometry=(2, 2),
+        high_contrast_blocks=[[(0, 0), (1, 1)]],
+        **general_params
+    )
+
+    # # ---------- 3x3 block geometry ---------- #
+    experiment(
+        name="opposite4x4",
+        a2show=np.array([INFINIT_A]),
+        blocks_geometry=(4, 4),
+        high_contrast_blocks=[[(0, 1), (1, 2)]],
+        **general_params
+    )
+    experiment(
+        name="checkerboard",
+        a2show=np.array([INFINIT_A]),
+        blocks_geometry=(4, 4),
+        high_contrast_blocks=[[(0, 0), (0, 2), (1, 1), (1, 3), (2, 0), (2, 2), (3, 1), (3, 3)]],
+        **general_params
+    )
 
     high_contrast_blocks = [(1, 1), (0, 3), (3, 1), (2, 3)]
     names = [f"d{i + 1}" for i in range(len(high_contrast_blocks))]
@@ -398,7 +388,6 @@ if __name__ == "__main__":
     #     experiment(
     #         name=name,
     #         a2show=np.array([INFINIT_A]),
-    #         n2show=3,
     #         blocks_geometry=(4, 4),
     #         high_contrast_blocks=hcb,
     #         **general_params
