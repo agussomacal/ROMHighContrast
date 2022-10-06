@@ -1,0 +1,182 @@
+from typing import List
+
+import numpy as np
+from sklearn.decomposition import PCA
+from tqdm import tqdm
+
+from lib.Estimators import EstimatorInv, EstimatorLinear
+from lib.SolutionsManagers import SolutionsManager
+
+INFINIT_A = 1e10  # 1e50
+
+LINESTYLES = {
+    "greedy": "solid",
+    "mixed_refinement_inf": "dashed",
+    "mixed": "dashdot",
+    "uniform_refinement_inf": "dotted",
+    "uniform": "dotted",
+    "uniform_refinement": "dotted",
+    "dyadic_refinement_inf": "dashdot",
+    "dyadic": "dashed",
+    "random_inf": (0, (3, 5, 1, 5, 1, 5)),
+    "random": "solid"
+}
+
+MARKERS = {
+    "greedy": ".",
+    "mixed_refinement_inf": "*",
+    "mixed": "*",
+    "uniform_refinement_inf": "o",
+    "uniform": "o",
+    "uniform_refinement": "s",
+    "dyadic_refinement_inf": "^",
+    "dyadic": "^",
+    "random_inf": "x",
+    "random": "x"
+}
+
+COLORS = {
+    "greedy": "green",
+    "mixed_refinement": "blueviolet",
+    "mixed_refinement_inf": "mediumblue",
+    "mixed": "blueviolet",
+    "uniform_refinement": "royalblue",
+    "uniform_refinement_inf": "darkblue",
+    "uniform": "blue",
+    "dyadic_refinement": "indianred",
+    "dyadic_refinement_inf": "darkred",
+    "dyadic": "red",
+    "random": "grey",
+    "random_inf": "darkgoldenrod",
+    "blocks": "slategrey"
+}
+
+
+def get_high_contrast_coefficient(a):
+    return np.array([np.max(coefs, axis=(-1, -2)) for coefs in a])
+
+
+def sort_orthogonalize_base(a_selected, rb):
+    order = np.argsort(1 / a_selected)
+    a_selected = a_selected[order]
+    rb = rb[order, :]
+    q, r = np.linalg.qr(rb.T)
+    rb = q.T
+    return a_selected, rb
+
+
+class BaseReducedBasis:
+    def __init__(self, basis, a, **kwargs):
+        self.basis = basis
+        self.a = a
+        self.inverse_parameter_estimator = EstimatorInv(a)
+        self.linear_parameter_estimator = EstimatorLinear(a)
+
+    @property
+    def dim(self):
+        return np.shape(self.basis)[0]
+
+    @property
+    def ambient_space_dim(self):
+        return np.shape(self.basis)[1]
+
+    def __str__(self):
+        return self.__class__.__name__
+
+    def forward_modeling(self, sm: SolutionsManager, a: np.ndarray):
+        return sm.generate_fm_solutions(a=a, coefficients_rom=self.basis)
+
+    def projection(self, sm: SolutionsManager, true_solutions: np.ndarray):
+        return sm.project_solutions(true_solutions, self.basis, optim_method="lsq")
+
+    def state_estimation(self, sm: SolutionsManager, measurement_points: np.ndarray, measurements: np.ndarray,
+                         return_coefs=False):
+        rb_evaluations_in_points = sm.evaluate_solutions(measurement_points, self.basis)
+        c = np.linalg.lstsq(rb_evaluations_in_points.T, measurements.T, rcond=-1)[0]
+        solution_estimations = c.T @ np.array(self.basis)
+        return c, solution_estimations if return_coefs else solution_estimations
+
+    def parameter_estimation_inverse(self, c):
+        """
+
+        :param c: coefficients obtained from state estimation fit
+        :return:
+        """
+        return self.inverse_parameter_estimator.estimate_parameter(c_values=c)
+
+    def parameter_estimation_linear(self, c):
+        """
+
+        :param c: coefficients obtained from state estimation fit
+        :return:
+        """
+        return self.linear_parameter_estimator.estimate_parameter(c_values=c)
+
+    def __getitem__(self, item):
+        # get a new reduced basis with the sub-sampled elements given by the slicing.
+        _, basis = sort_orthogonalize_base(
+            get_high_contrast_coefficient(self.a[item]),
+            np.reshape(self.basis[item], (-1, self.ambient_space_dim))
+        )
+        return BaseReducedBasis(basis=basis, a=self.a[item])
+
+
+class ReducedBasisGreedy(BaseReducedBasis):
+    name = "Greedy"
+    color = "Green"
+    linestyle = "solid"
+    markers = "."
+
+    def __init__(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
+                 optim_method="lsq", greedy_for="projection", solutions2train_h1norm=1, **kwargs):
+        high_contrast_a = get_high_contrast_coefficient(a2train)
+
+        basis = np.empty((0, 0))
+        basis_orth = basis.copy()
+        a_selected = []
+        a = []
+        for _ in tqdm(range(n), desc="Obtaining greedy basis."):
+            if greedy_for == "projection":
+                approx_solutions_coefs = sm.project_solutions(solutions=solutions2train, coefficients_rom=basis_orth,
+                                                              optim_method=optim_method)
+            elif greedy_for == "forward_modeling":
+                approx_solutions_coefs = sm.generate_fm_solutions(a=a2train, coefficients_rom=basis_orth)
+            else:
+                raise Exception(f"Not implemented greedy for {greedy_for}, should be one of ['projection']")
+
+            max_error_index = np.argmax(sm.H10norm(approx_solutions_coefs - solutions2train) / solutions2train_h1norm)
+            max_element = np.reshape(solutions2train[max_error_index], (1, -1))
+            basis = max_element if len(basis) == 0 else np.concatenate((basis, max_element), axis=0)
+            a.append(a2train[max_error_index])
+
+            # orthonormalize for stability and choose the ordering by the contrast of the higher coefficient.
+            a_selected = np.append(a_selected, np.ravel(high_contrast_a[max_error_index]))
+            a_selected, basis_orth = sort_orthogonalize_base(a_selected, np.reshape(basis, (len(basis), -1)))
+
+        super().__init__(basis=basis, a=a)
+
+
+class ReducedBasisRandom(BaseReducedBasis):
+    name = "Random"
+    color = "grey"
+    linestyle = "solid"
+    markers = "x"
+
+    def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), **kwargs):
+        high_contrast_a = get_high_contrast_coefficient(a2train)
+        chosen_ix = np.random.choice(len(solutions2train), size=n, replace=False)
+        basis = solutions2train[chosen_ix]
+        # orthonormalize for stability and choose the ordering by the contrast of the higher coefficient.
+        # _, basis = sort_orthogonalize_base(high_contrast_a[chosen_ix], np.reshape(basis, (len(basis), -1)))
+        super().__init__(basis=basis, a=a2train[chosen_ix])
+
+
+class ReducedBasisPCA(BaseReducedBasis):
+    name = "Random"
+    color = "grey"
+    linestyle = "solid"
+    markers = "x"
+
+    def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), **kwargs):
+        pca = PCA(n_components=n).fit(solutions2train)
+        super().__init__(basis=pca.components_, a=a2train[chosen_ix])
