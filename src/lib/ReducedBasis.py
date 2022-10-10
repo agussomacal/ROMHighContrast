@@ -9,48 +9,6 @@ from lib.SolutionsManagers import SolutionsManager
 
 INFINIT_A = 1e10  # 1e50
 
-LINESTYLES = {
-    "greedy": "solid",
-    "mixed_refinement_inf": "dashed",
-    "mixed": "dashdot",
-    "uniform_refinement_inf": "dotted",
-    "uniform": "dotted",
-    "uniform_refinement": "dotted",
-    "dyadic_refinement_inf": "dashdot",
-    "dyadic": "dashed",
-    "random_inf": (0, (3, 5, 1, 5, 1, 5)),
-    "random": "solid"
-}
-
-MARKERS = {
-    "greedy": ".",
-    "mixed_refinement_inf": "*",
-    "mixed": "*",
-    "uniform_refinement_inf": "o",
-    "uniform": "o",
-    "uniform_refinement": "s",
-    "dyadic_refinement_inf": "^",
-    "dyadic": "^",
-    "random_inf": "x",
-    "random": "x"
-}
-
-COLORS = {
-    "greedy": "green",
-    "mixed_refinement": "blueviolet",
-    "mixed_refinement_inf": "mediumblue",
-    "mixed": "blueviolet",
-    "uniform_refinement": "royalblue",
-    "uniform_refinement_inf": "darkblue",
-    "uniform": "blue",
-    "dyadic_refinement": "indianred",
-    "dyadic_refinement_inf": "darkred",
-    "dyadic": "red",
-    "random": "grey",
-    "random_inf": "darkgoldenrod",
-    "blocks": "slategrey"
-}
-
 
 def get_high_contrast_coefficient(a):
     return np.array([np.max(coefs, axis=(-1, -2)) for coefs in a])
@@ -66,7 +24,16 @@ def sort_orthogonalize_base(a_selected, rb):
 
 
 class BaseReducedBasis:
-    def __init__(self, basis, a, **kwargs):
+    def __init__(self):
+        self.basis = None
+        self.a = None
+        self.inverse_parameter_estimator = None
+        self.linear_parameter_estimator = None
+
+    def build(self, **kwargs):
+        raise Exception("Not implemented.")
+
+    def set(self, basis, a):
         self.basis = basis
         self.a = a
         self.inverse_parameter_estimator = EstimatorInv(a)
@@ -114,7 +81,9 @@ class BaseReducedBasis:
 
     def __getitem__(self, item):
         # get a new reduced basis with the sub-sampled elements given by the slicing.
-        return BaseReducedBasis(basis=self.basis[item], a=self.a[item])
+        rb = BaseReducedBasis()
+        rb.set(basis=self.basis[item], a=self.a[item])
+        return rb
 
     def orthonormalize(self):
         _, self.basis = sort_orthogonalize_base(
@@ -123,14 +92,23 @@ class BaseReducedBasis:
         )
 
 
-class ReducedBasisGreedy(BaseReducedBasis):
-    name = "Greedy"
-    color = "Green"
-    linestyle = "solid"
-    markers = "."
+GREEDY_FOR_H10 = r"$H^1_0$"
+GREEDY_FOR_GALERKIN = "galerkin"
 
-    def __init__(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
-                 optim_method="lsq", greedy_for="projection", solutions2train_h1norm=1, **kwargs):
+
+class ReducedBasisGreedy(BaseReducedBasis):
+    color = "Green"
+    marker = "."
+
+    def __init__(self, optim_method="lsq", greedy_for=GREEDY_FOR_H10):
+        self.optim_method = optim_method
+        self.greedy_for = greedy_for
+        self.name = "Greedy " + self.greedy_for
+        self.linestyle = "solid" if greedy_for == GREEDY_FOR_H10 else "dashed"
+        super().__init__()
+
+    def build(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
+              solutions2train_h1norm=1, **kwargs):
         high_contrast_a = get_high_contrast_coefficient(a2train)
 
         basis = np.empty((0, 0))
@@ -138,13 +116,14 @@ class ReducedBasisGreedy(BaseReducedBasis):
         a_selected = []
         a = []
         for _ in tqdm(range(n), desc="Obtaining greedy basis."):
-            if greedy_for == "projection":
+            if self.greedy_for == GREEDY_FOR_H10:
                 approx_solutions_coefs = sm.project_solutions(solutions=solutions2train, coefficients_rom=basis_orth,
-                                                              optim_method=optim_method)
-            elif greedy_for == "forward_modeling":
+                                                              optim_method=self.optim_method)
+            elif self.greedy_for == GREEDY_FOR_GALERKIN:
                 approx_solutions_coefs = sm.generate_fm_solutions(a=a2train, coefficients_rom=basis_orth)
             else:
-                raise Exception(f"Not implemented greedy for {greedy_for}, should be one of ['projection']")
+                raise Exception(f"Not implemented greedy for {self.greedy_for}, "
+                                f"should be one of [{GREEDY_FOR_H10}, {GREEDY_FOR_GALERKIN}]")
 
             max_error_index = np.argmax(sm.H10norm(approx_solutions_coefs - solutions2train) / solutions2train_h1norm)
             max_element = np.reshape(solutions2train[max_error_index], (1, -1))
@@ -155,7 +134,8 @@ class ReducedBasisGreedy(BaseReducedBasis):
             a_selected = np.append(a_selected, np.ravel(high_contrast_a[max_error_index]))
             a_selected, basis_orth = sort_orthogonalize_base(a_selected, np.reshape(basis, (len(basis), -1)))
 
-        super().__init__(basis=basis, a=a)
+        super().set(basis=basis, a=a)
+        return self
 
 
 def get_inf_solutions_starting_basis(solutions2train, a2train):
@@ -179,25 +159,28 @@ def get_starting_basis(solutions2train, a2train, add_inf_solutions=True):
 class ReducedBasisRandom(BaseReducedBasis):
     name = "Random"
     color = "blue"
+    marker = "*"
     linestyle = "solid"
-    markers = "*"
 
-    def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), add_inf_solutions=True, seed=42,
-                 **kwargs):
+    def build(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
+              solutions2train_h1norm=1, add_inf_solutions=True, seed=42, **kwargs):
         basis, a, solutions2train, a2train = get_starting_basis(solutions2train, a2train, add_inf_solutions)
         np.random.seed(seed)
         chosen_ix = np.random.choice(len(solutions2train), size=n, replace=False)
-        super().__init__(basis=np.vstack((basis, solutions2train[chosen_ix]))[:n],
-                         a=np.vstack((a, a2train[chosen_ix]))[:n])
+        super().set(basis=np.vstack((basis, solutions2train[chosen_ix]))[:n],
+                    a=np.vstack((a, a2train[chosen_ix]))[:n])
+        return self
 
 
 class ReducedBasisPCA(BaseReducedBasis):
     name = "Random"
     color = "grey"
     linestyle = "solid"
-    markers = "x"
+    marker = "x"
 
-    def __init__(self, n: int, solutions2train, a2train: List[np.ndarray] = (()), **kwargs):
+    def build(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
+              solutions2train_h1norm=1, add_inf_solutions=True, seed=42, **kwargs):
         raise Exception("Not implemented.")
         pca = PCA(n_components=n).fit(solutions2train)
-        super().__init__(basis=pca.components_, a=a2train[chosen_ix])
+        super().set(basis=pca.components_, a=a2train[chosen_ix])
+        return self
