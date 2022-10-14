@@ -1,8 +1,17 @@
 import itertools
+from contextlib import contextmanager
 
 import matplotlib.pylab as plt
 import numpy as np
 from matplotlib import ticker
+
+
+@contextmanager
+def save_fig(pathplot, axes_xy_proportions=(4, 4), dpi=None):
+    fig, ax = plt.subplots(figsize=axes_xy_proportions)
+    yield ax
+    plt.savefig(f"{pathplot}{'.png' if pathplot[-4:] not in ['.png', '.jpg', '.svg'] else ''}", dpi=dpi)
+    plt.close()
 
 
 def squared_subplots(N_subplots, axes_xy_proportions=(4, 4)):

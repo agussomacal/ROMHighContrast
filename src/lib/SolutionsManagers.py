@@ -1,10 +1,12 @@
 from functools import partial
+
 from pathos.multiprocessing import Pool, cpu_count
 from typing import Union, List, Tuple
 
 import numpy as np
 from scipy import linalg
 from scipy.interpolate import lagrange
+from scipy.sparse.linalg import spsolve
 from sklearn.linear_model import Ridge
 
 
@@ -19,21 +21,28 @@ def galerkin(a, B_total, A_preassembled, method="lsq"):
         A_preassembled,
         a
     )
-    inf_coefs = np.isinf(A_assembled.max(axis=0)) | np.isnan(A_assembled.max(axis=0))
-    coefs = np.zeros(len(B_total))
+    # inf_coefs = np.isinf(A_assembled.max(axis=0)) | np.isnan(A_assembled.max(axis=0))
+    # coefs = np.zeros(len(B_total))
     if method.lower() == "lsq":
         # coefs[~inf_coefs] = np.linalg.lstsq(A_assembled[~inf_coefs, :][:, ~inf_coefs], B_total[~inf_coefs], rcond=-1)[0]
-        coefs[~inf_coefs] = linalg.solve(A_assembled[~inf_coefs, :][:, ~inf_coefs], B_total[~inf_coefs], assume_a='pos')
+        # coefs[~inf_coefs] = linalg.solve(A_assembled[~inf_coefs, :][:, ~inf_coefs], B_total[~inf_coefs], assume_a='pos')
+        coefs = linalg.solve(A_assembled, B_total, assume_a='pos')
+    elif method.lower() == "lsqsparse":
+        coefs = spsolve(A_assembled, B_total)
+        # lsmr()
+        # lsqr
     elif method.lower() == "ridge":
-        coefs[~inf_coefs] = Ridge(alpha=1e-15, fit_intercept=False).fit(A_assembled[~inf_coefs, :][:, ~inf_coefs],
-                                                                        B_total[~inf_coefs]).coef_
+        # coefs[~inf_coefs] = Ridge(alpha=1e-15, fit_intercept=False).fit(A_assembled[~inf_coefs, :][:, ~inf_coefs],
+        #                                                                 B_total[~inf_coefs]).coef_
+        coefs = Ridge(alpha=1e-15, fit_intercept=False).fit(A_assembled, B_total).coef_
     else:
         raise Exception(f"Method {method} Not implemented.")
     return coefs
 
 
 class SolutionsManager:
-    def __init__(self, A_preassembled, B_total, num_cores=1):
+    def __init__(self, A_preassembled, B_total, num_cores=1, method="lsq"):
+        self.method = method
         self.vspace_dim = len(B_total)
         self.blocks_geometry = np.shape(A_preassembled)[:2]
         self.A_preassembled = A_preassembled
@@ -54,7 +63,9 @@ class SolutionsManager:
 
     def generate_solutions(self, a2try):
         return np.array(
-            list(self.mapfunction(partial(galerkin, B_total=self.B_total, A_preassembled=self.A_preassembled), a2try)))
+            list(self.mapfunction(
+                partial(galerkin, B_total=self.B_total, A_preassembled=self.A_preassembled, method=self.method),
+                a2try)))
 
     def generate_fm_solutions(self, a: Union[np.ndarray, List[np.ndarray]], coefficients_rom: List[np.ndarray]):
         if len(coefficients_rom) == 0:
@@ -72,10 +83,11 @@ class SolutionsManager:
             )
 
             B_k = np.array(coefficients_rom) @ self.B_total
-            c_i = np.array(list(self.mapfunction(partial(galerkin, B_total=B_k, A_preassembled=A_kl), a)))
+            c_i = np.array(
+                list(self.mapfunction(partial(galerkin, B_total=B_k, A_preassembled=A_kl, method=self.method), a)))
             return np.einsum("id,dj->ij", c_i, coefficients_rom)
 
-    def project_solutions(self, solutions: List[np.ndarray], coefficients_rom: List[np.ndarray], optim_method="lsq"):
+    def project_solutions(self, solutions: List[np.ndarray], coefficients_rom: List[np.ndarray]):
         if len(coefficients_rom) == 0:
             # in case no reduced basis then return 0 always.
             return np.zeros((len(solutions), self.vspace_dim))
@@ -103,7 +115,7 @@ class SolutionsManager:
             )
 
             def project_galerkin(B_k):
-                return galerkin(a=np.ones(np.shape(A_kl)[:2]), B_total=B_k, A_preassembled=A_kl, method=optim_method)
+                return galerkin(a=np.ones(np.shape(A_kl)[:2]), B_total=B_k, A_preassembled=A_kl, method=self.method)
 
             c_i = np.array(list(self.mapfunction(project_galerkin, np.transpose(B_km))))
             return np.einsum("id,dj->ij", c_i, coefficients_rom)
@@ -113,7 +125,7 @@ class SolutionsManager:
 
 
 class SolutionsManagerFEM(SolutionsManager):
-    def __init__(self, blocks_geometry: Tuple[int, int], N: int, num_cores=1):
+    def __init__(self, blocks_geometry: Tuple[int, int], N: int, num_cores=1, method="lsq"):
         nrb, ncb = blocks_geometry  # number of blocks (in columns dim) (in rows dim)
         self.N = N  # number of columns in each subsquare
         self.x_domain = (-ncb / 2.0, ncb / 2.0)
@@ -186,7 +198,7 @@ class SolutionsManagerFEM(SolutionsManager):
 
         A_preassembled = np.array(list(map(A, np.eye(nrb * ncb).reshape((nrb * ncb, nrb, ncb))))).reshape(
             (nrb, ncb, dim, dim))
-        super().__init__(A_preassembled, B_total, num_cores=num_cores)
+        super().__init__(A_preassembled, B_total, num_cores=num_cores, method=method)
 
     def evaluate_solutions(self, points: np.ndarray, solutions: List[np.ndarray]) -> np.ndarray:
         """

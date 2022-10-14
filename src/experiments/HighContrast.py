@@ -1,5 +1,7 @@
+import itertools
 import os
 from collections import namedtuple
+from multiprocessing import Pool
 from pathlib import Path
 from time import time
 from typing import Callable
@@ -11,7 +13,10 @@ from matplotlib import pylab as plt, cm
 
 from lib.ReducedBasis import ReducedBasisGreedy, INFINIT_A, ReducedBasisRandom, GREEDY_FOR_GALERKIN, GREEDY_FOR_H10
 from lib.SolutionsManagers import SolutionsManager
-from src.lib.VizUtils import plot_solutions_together
+from src.lib.VizUtils import plot_solutions_together, save_fig
+
+MachinePrecision = 1e-13
+FIGSIZE = (8, 8)
 
 plt.rcParams.update({'font.size': 14})
 from tqdm import tqdm
@@ -22,8 +27,6 @@ from lib.SolutionsManagers import SolutionsManagerFEM
 TypeOfProblems = namedtuple("TypeOfProblems",
                             "forward_modeling projection state_estimation parameter_estimation_inverse parameter_estimation_linear")
 RBErrorDataType = namedtuple("RBErrorDataType", "ReducedBasisName ReducedBasis a2test errors")
-SOLVER_POLYNOMIAL = "polynomials"
-SOLVER_FEM = "fem"
 
 plotting_styles4error_paths = [
     "-",
@@ -31,6 +34,30 @@ plotting_styles4error_paths = [
     "-.",
     "--",
 ]
+
+reduced_basis_builders = [
+    ReducedBasisRandom(),
+    ReducedBasisRandom(False),
+    ReducedBasisGreedy(greedy_for=GREEDY_FOR_H10),
+    ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
+]
+
+color_dict = {
+    reduced_basis_builders[0].name: "firebrick",
+    reduced_basis_builders[1].name: "darkgoldenrod",
+    reduced_basis_builders[2].name: "forestgreen",
+    reduced_basis_builders[3].name: "royalblue",
+}
+
+marker_dict = {
+    reduced_basis_builders[0].name: ".",
+    reduced_basis_builders[1].name: ".",
+    reduced_basis_builders[2].name: ".",
+    reduced_basis_builders[3].name: ".",
+}
+
+
+# reduced_basis_builders = reduced_basis_builders[2:]
 
 
 def get_full_a(a_per_block, sm, high_contrast_blocks):
@@ -71,22 +98,9 @@ def get_data(experiment_path):
     return data, data_path
 
 
-def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="projection",
-               mesh_discretization_per_dim=6,
-               diff_coef_refinement: int = 30, vn_max_dim: int = 20, num_measurements: int = 50,
-               a2show=None, blocks_geometry=(4, 4),
-               high_contrast_blocks=[[(1, 1), (1, 2), (2, 1), (2, 2)]],
-               recalculate=False, num_cores=1, max_num_samples_offline=10000, seed=42):
-    # --------- paths and data ---------- #
-    experiment_path = get_folder_from_params(name)
-    experiment_path.mkdir(parents=True, exist_ok=True)
-    data, data_path = get_data(experiment_path)
-
-    print("\n\n========== ========== =========== ==========")
-    print(experiment_path)
-
-    # --------- true solutions calculation/loading ---------- #
-    sm = SolutionsManagerFEM(blocks_geometry, N=mesh_discretization_per_dim, num_cores=num_cores)
+def get_a2test_and_train(blocks_geometry, high_contrast_blocks, mesh_discretization_per_dim, diff_coef_refinement,
+                         max_num_samples_offline, seed, num_cores=1, method="lsq"):
+    sm = SolutionsManagerFEM(blocks_geometry, N=mesh_discretization_per_dim, num_cores=num_cores, method=method)
     a_high_contrast = np.transpose(list(map(np.ravel, np.meshgrid(
         *[1 / np.linspace(1 / INFINIT_A, 1, num=min((diff_coef_refinement * int(np.log2(INFINIT_A)),
                                                      int(np.ceil(
@@ -99,10 +113,34 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
             np.random.choice(len(a_high_contrast), size=max((0, max_num_samples_offline - len(a_inf_high_contrast))),
                              replace=False)]
     a_high_contrast = np.vstack((a_inf_high_contrast, a_high_contrast))
+    a = get_full_a(a_high_contrast, sm, high_contrast_blocks)
+    return sm, a, a_high_contrast
+
+
+def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="projection",
+               mesh_discretization_per_dim=6,
+               diff_coef_refinement: int = 30, vn_max_dim: int = 20, num_measurements: int = 50,
+               blocks_geometry=(4, 4),
+               high_contrast_blocks=[[(1, 1), (1, 2), (2, 1), (2, 2)]], vn_max_dim2do_stats: int = None,
+               recalculate=False, num_cores=1, max_num_samples_offline=10000, seed=42, recalculate_basis=False,
+               method="lsqsparse"):
+    vn_max_dim2do_stats = vn_max_dim if vn_max_dim2do_stats is None else vn_max_dim2do_stats
+
+    # --------- paths and data ---------- #
+    experiment_path = get_folder_from_params(name)
+    experiment_path.mkdir(parents=True, exist_ok=True)
+    data, data_path = get_data(experiment_path)
+
+    print("\n\n========== ========== =========== ==========")
+    print(experiment_path)
+
+    # --------- true solutions calculation/loading ---------- #
+    sm, a, a_high_contrast = get_a2test_and_train(
+        blocks_geometry, high_contrast_blocks, mesh_discretization_per_dim, diff_coef_refinement,
+        max_num_samples_offline, seed, num_cores, method
+    )
 
     print("Solutions to calculate: ", len(a_high_contrast))
-    a = get_full_a(a_high_contrast, sm, high_contrast_blocks)
-
     if "solutions" not in data.keys():
         print("Pre-computing solutions")
         data["time2calculate_solutions"], data["solutions"] = calculate_time(sm.generate_solutions)(a2try=a)
@@ -117,7 +155,8 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
 
     # --------- create reduced basis space ---------- #
     for reduced_basis_builder in reduced_basis_builders:
-        if reduced_basis_builder.name not in data.keys() or data[reduced_basis_builder.name]["basis"].dim < vn_max_dim:
+        if reduced_basis_builder.name not in data.keys() or data[reduced_basis_builder.name][
+            "basis"].dim < vn_max_dim or recalculate_basis:
             print(f"Creating full reduced basis {reduced_basis_builder.name}")
             data[reduced_basis_builder.name] = {"errors": {}, "times": {}}
             data[reduced_basis_builder.name]["time2build"], data[reduced_basis_builder.name]["basis"] = \
@@ -134,7 +173,7 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
     for n in tqdm(n2try, desc="Pre-calculating statistics."):
         print(f"dim(Vn)={n}")
         for rb_name in reduced_basis_2show:
-            if recalculate or n not in data[rb_name]["errors"].keys():
+            if n <= vn_max_dim2do_stats and (recalculate or n not in data[rb_name]["errors"].keys()):
                 rb = data[rb_name]["basis"][:n]
                 rb.orthonormalize()
 
@@ -167,7 +206,37 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
 
                 joblib.dump(data, data_path)
 
-    # [k for k in data.keys() if k not in ["solutions", "time2calculate_solutions"]]
+
+def plot_rates_of_convergence(ax, data, reduced_basis_2show, type_of_problem):
+    for rb_name in reduced_basis_2show:
+        rb_stats = data[rb_name]["errors"]
+        calculated_ns = sorted(rb_stats.keys())
+        linf = [np.max(rb_stats[n][TypeOfProblems._fields.index(type_of_problem)]) for n in calculated_ns]
+        ax.plot(calculated_ns, linf, label=rb_name, c=color_dict[data[rb_name]["basis"].name],
+                linestyle="solid", marker=marker_dict[data[rb_name]["basis"].name])
+    ax.set_xlabel(r"$\mathrm{dim}(V_n)$")
+    ax.set_ylabel(r"maximal $H^1_0$ error")
+    ax.set_yscale("log")
+    # handles, labels = fig.gca().get_legend_handles_labels()
+    # order = np.argsort(labels)
+    # ax.legend([handles[idx] for idx in order], [labels[idx] for idx in order])
+    ax.legend()
+
+
+def plot_results(name, reduced_basis_builders, a2show, high_contrast_blocks, blocks_geometry,
+                 mesh_discretization_per_dim, diff_coef_refinement, max_num_samples_offline, seed, num_cores, method,
+                 **kwargs):
+    # --------- paths and data ---------- #
+    experiment_path = get_folder_from_params(name)
+    experiment_path.mkdir(parents=True, exist_ok=True)
+    data, data_path = get_data(experiment_path)
+
+    sm, a, a_high_contrast = get_a2test_and_train(
+        blocks_geometry, high_contrast_blocks, mesh_discretization_per_dim, diff_coef_refinement,
+        max_num_samples_offline, seed, num_cores, method
+    )
+
+    reduced_basis_2show = [rb.name for rb in reduced_basis_builders]
 
     # --------- ---------- ---------- ---------- #
     # ------------ Plotting results ------------ #
@@ -176,7 +245,7 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
     error_path_path.mkdir(parents=True, exist_ok=True)
     for i, type_of_problem in enumerate(TypeOfProblems._fields):
         for rb_name in reduced_basis_2show:
-            fig, ax = plt.subplots(ncols=1, figsize=(12, 6))
+            fig, ax = plt.subplots(ncols=1, figsize=FIGSIZE)
             fig.suptitle(f"{type_of_problem.replace('_', ' ')}")
             ax.set_title(f"Reduced basis: {rb_name}")
             rb_stats = data[rb_name]["errors"]
@@ -187,7 +256,7 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
                     i]
                 ax.plot(ahc[order], error[order], label=n,
                         marker=None,
-                        c=cm.get_cmap('viridis')((n - n2try[0]) / len(n2try)),  # Spectral
+                        c=cm.get_cmap('viridis')((n - max(rb_stats.keys())) / max(rb_stats.keys())),  # Spectral
                         # linestyle=plotting_styles4error_paths[N % len(plotting_styles4error_paths)])
                         )
             # ax.axvline(1 / a2show, linestyle='-.', c='k')
@@ -214,14 +283,17 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
     error_rates_path = Path.joinpath(experiment_path, 'ErrorRates')
     error_rates_path.mkdir(parents=True, exist_ok=True)
     for i, type_of_problem in enumerate(TypeOfProblems._fields):
-        fig, ax = plt.subplots(ncols=1, figsize=(12, 6))
-        ax.set_title(type_of_problem)
+        # with save_fig(pathplot=f"{error_rates_path}/{name}_{type_of_problem}_error_rates.png",
+        #               axes_xy_proportions=FIGSIZE, dpi=None) as ax:
+        #     plot_rates_of_convergence(ax, data, reduced_basis_2show, type_of_problem)
+        fig, ax = plt.subplots(ncols=1, figsize=FIGSIZE)
+        # ax.set_title(type_of_problem)
         for rb_name in reduced_basis_2show:
             rb_stats = data[rb_name]["errors"]
             calculated_ns = sorted(rb_stats.keys())
             linf = [np.max(rb_stats[n][i]) for n in calculated_ns]
-            ax.plot(calculated_ns, linf, label=rb_name, c=data[rb_name]["basis"].color,
-                    linestyle=data[rb_name]["basis"].linestyle, marker=data[rb_name]["basis"].marker)
+            ax.plot(calculated_ns, linf, label=rb_name, c=color_dict[data[rb_name]["basis"].name],
+                    linestyle="solid", marker=marker_dict[data[rb_name]["basis"].name])
         ax.set_xlabel(r"$\mathrm{dim}(V_n)$")
         ax.set_ylabel(r"maximal $H^1_0$ error")
         ax.set_yscale("log")
@@ -234,16 +306,17 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
     print("Plotting rates of convergence together...")
     projection_name_dict = {"projection": r"$H^1_0$ projection", "forward_modeling": "Galerkin projection"}
     projection_linestyle_dict = {"projection": "solid", "forward_modeling": "dashed"}
-    fig, ax = plt.subplots(ncols=1, figsize=(12, 6))
-    ax.set_title("Convergence of error")
+    fig, ax = plt.subplots(ncols=1, figsize=FIGSIZE)
+    # ax.set_title("Convergence of error")
     for type_of_problem in ["projection", "forward_modeling"]:
         for rb_name in reduced_basis_2show:
             rb_stats = data[rb_name]["errors"]
             calculated_ns = sorted(rb_stats.keys())
             linf = [np.max(rb_stats[n][TypeOfProblems._fields.index(type_of_problem)]) for n in calculated_ns]
             ax.plot(calculated_ns, linf, label=f"{rb_name} {projection_name_dict[type_of_problem]}",
-                    c=data[rb_name]["basis"].color,
-                    linestyle=projection_linestyle_dict[type_of_problem], marker=data[rb_name]["basis"].marker)
+                    c=color_dict[data[rb_name]["basis"].name],
+                    linestyle=projection_linestyle_dict[type_of_problem],
+                    marker=data[rb_name]["basis"].marker)
     ax.set_xlabel(r"$\mathrm{dim}(V_n)$")
     ax.set_ylabel(r"maximal $H^1_0$ error")
     ax.set_yscale("log")
@@ -255,16 +328,21 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()], greedy_for="
     print("Plotting finished.")
 
 
-def gather_experiments(names, high_contrast_blocks_list, reduced_basis_builder=ReducedBasisGreedy, **kwargs):
-    experiment_path = results_path.joinpath("HighContrastDimensionality")
+def gather_experiments(names, high_contrast_blocks_list, reduced_basis_builder=ReducedBasisGreedy(), name="",
+                       type_of_problems=None, folder_name="HighContrastDimensionality", **kwargs):
+    PROJECTION = "forward_modeling"
+    experiment_path = results_path.joinpath(folder_name + name)
     experiment_path.mkdir(exist_ok=True, parents=True)
     print("Plotting rates of convergence...")
     for i, type_of_problem in enumerate(TypeOfProblems._fields):
-        fig, ax = plt.subplots(ncols=1, figsize=(12, 6))
-        if type_of_problem == "projection":
-            fig_log, ax_log = plt.subplots(ncols=1, figsize=(12, 6))
-            ax_log.set_title(f"{reduced_basis_builder.name}: {type_of_problem}")
-        ax.set_title(f"{reduced_basis_builder.name}: {type_of_problem}")
+        if type_of_problems is not None and type_of_problem not in type_of_problems:
+            continue
+
+        fig, ax = plt.subplots(ncols=1, figsize=FIGSIZE)
+        if type_of_problem == PROJECTION:
+            fig_log, ax_log = plt.subplots(ncols=1, figsize=FIGSIZE)
+            # ax_log.set_title(f"{reduced_basis_builder.name}: {type_of_problem}")
+        # ax.set_title(f"{reduced_basis_builder.name}: {type_of_problem}")
         for j, (name, high_contrast_blocks) in enumerate(zip(names, high_contrast_blocks_list)):
             sub_experiment_path = get_folder_from_params(name)
             data, data_path = get_data(sub_experiment_path)
@@ -277,16 +355,19 @@ def gather_experiments(names, high_contrast_blocks_list, reduced_basis_builder=R
 
             label = f"d: {len(high_contrast_blocks)}"
             c = cm.Set1(j)
-            if type_of_problem == "projection":
+            if type_of_problem == PROJECTION:
                 rate, origin = np.ravel(np.linalg.lstsq(
-                    np.vstack([calculated_ns, np.ones(len(linf))]).T,
-                    np.log(linf).reshape((-1, 1)), rcond=None)[0])
-                ax.plot(calculated_ns, np.exp(rate * calculated_ns + origin), ":", c=c, alpha=0.7)
+                    np.vstack([calculated_ns[linf > MachinePrecision], np.ones(np.sum(linf > MachinePrecision))]).T,
+                    np.log(linf[linf > MachinePrecision]).reshape((-1, 1)), rcond=None)[0])
+                ax.plot(calculated_ns[linf > MachinePrecision],
+                        np.exp(rate * calculated_ns[linf > MachinePrecision] + origin), ":", c=c, alpha=0.7)
 
                 rate_log, origin_log = np.ravel(np.linalg.lstsq(
-                    np.vstack([calculated_ns_log, np.ones(len(linf))]).T,
-                    np.log(linf_log).reshape((-1, 1)), rcond=None)[0])
-                ax_log.plot(calculated_ns, np.exp(rate_log * calculated_ns_log + origin_log), ":", c=c, alpha=0.7)
+                    np.vstack([calculated_ns_log[linf > MachinePrecision], np.ones(np.sum(linf > MachinePrecision))]).T,
+                    np.log(linf_log[linf > MachinePrecision]).reshape((-1, 1)), rcond=None)[0])
+                ax_log.plot(calculated_ns[linf > MachinePrecision],
+                            np.exp(rate_log * calculated_ns_log[linf > MachinePrecision] + origin_log), ":", c=c,
+                            alpha=0.7)
 
                 label_log = label + f" {rate_log:.2f}"
                 label = label + f" {rate:.2f}"
@@ -305,75 +386,73 @@ def gather_experiments(names, high_contrast_blocks_list, reduced_basis_builder=R
         ax.set_yscale("log")
         ax.legend()
 
-        if type_of_problem == "projection":
+        if type_of_problem == PROJECTION:
             ax_log.legend()
-            fig_log.savefig(f"{experiment_path}/{type_of_problem}_error_rates_loglog.png")
-        fig.savefig(f"{experiment_path}/{type_of_problem}_error_rates_log.png")
+            fig_log.savefig(f"{experiment_path}/{name}_{type_of_problem}_error_rates_loglog.png")
+        fig.savefig(f"{experiment_path}/{name}_{type_of_problem}_error_rates_log.png")
         plt.close("all")
 
     print("Plotting finished.")
 
 
+def paper_plots(names, high_contrast_blocks_list, reduced_basis_builder, type_of_problems=None, **kwargs):
+    gather_experiments(names, high_contrast_blocks_list, reduced_basis_builder=reduced_basis_builder, name="",
+                       type_of_problems=type_of_problems, **kwargs)
+
+
 if __name__ == "__main__":
     general_params = {
-        "reduced_basis_builders": [ReducedBasisGreedy(greedy_for=GREEDY_FOR_H10),
-                                   ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
-                                   ReducedBasisRandom()],
-        "mesh_discretization_per_dim": 10,
+        "reduced_basis_builders": reduced_basis_builders,
+        "mesh_discretization_per_dim": 10,  # 20
         "diff_coef_refinement": 10,  # 30
         "num_measurements": 50,
-        "num_cores": 15,
+        "num_cores": 1,
         "max_num_samples_offline": 1000,
         "seed": 42,
-        "recalculate": False
+        "vn_max_dim": 15,
+        "vn_max_dim2do_stats": None,  # 6 None,
+        "recalculate": False,
+        "recalculate_basis": False,
+        "blocks_geometry": (4, 4),
+        "method": "lsqsparse"
     }
 
-    # ---------- 2x2 block geometry ---------- #
-    # general_params["vn_max_dim"] = 16
-    # experiment(
-    #     name="single2x2",
-    #     a2show=np.array([INFINIT_A]),
-    #     blocks_geometry=(2, 2),
-    #     high_contrast_blocks=[[(0, 0)]],
-    #     **general_params
-    # )
-    # experiment(
-    #     name="opposite2x2",
-    #     a2show=np.array([INFINIT_A]),
-    #     blocks_geometry=(2, 2),
-    #     high_contrast_blocks=[[(0, 0), (1, 1)]],
-    #     **general_params
-    # )
-
-    # # ---------- 3x3 block geometry ---------- #
-    general_params["vn_max_dim"] = 40
-    experiment(
-        name="opposite4x4",
-        a2show=np.array([INFINIT_A]),
-        blocks_geometry=(4, 4),
-        high_contrast_blocks=[[(0, 1), (1, 2)]],
-        **general_params
-    )
-    experiment(
-        name="checkerboard",
-        a2show=np.array([INFINIT_A]),
-        blocks_geometry=(4, 4),
-        high_contrast_blocks=[[(0, 0), (0, 2), (1, 1), (1, 3), (2, 0), (2, 2), (3, 1), (3, 3)]],
-        **general_params
-    )
-
-    high_contrast_blocks = [(1, 1), (0, 3), (3, 1), (2, 3)]
-    names = [f"d{i + 1}" for i in range(len(high_contrast_blocks))]
-    high_contrast_blocks = list(map(lambda x: [x], high_contrast_blocks))
+    # lsq (no sparse) 1 core: 113.14256739616394
+    # lsq (no sparse) 15 cores: 221.70560717582703
+    # lsqsparse 1 core: 37.1559112071991
+    # lsqsparse 15 cores: 124.76248121261597
+    high_contrast_blocks = [[(0, 1)], [(1, 3)], [(2, 1), (2, 2), (2, 3)]]
+    complement = set(itertools.product(range(4), range(4)))
+    for e in high_contrast_blocks:
+        complement = complement.difference(set(e))
+    high_contrast_blocks.append(list(complement))
+    names = [f"{general_params['mesh_discretization_per_dim']}_GeomAssumptionsD{i + 1}" for i in
+             range(len(high_contrast_blocks))]
     high_contrast_blocks_list = [high_contrast_blocks[:i + 1] for i in range(len(high_contrast_blocks))]
-    for name, hcb in zip(names, high_contrast_blocks_list):
-        experiment(
-            name=name,
-            a2show=np.array([INFINIT_A]),
-            blocks_geometry=(4, 4),
-            high_contrast_blocks=hcb,
-            **general_params
-        )
 
-    gather_experiments(names=names, high_contrast_blocks_list=high_contrast_blocks_list, **general_params)
-    # np.array([-2.29, -0.73, -0.4, -0.3])*np.arange(1,5) #-> array([-2.29, -1.46, -1.2 , -1.2 ])
+
+    def par_func(x):
+        # experiment(name=x[0], high_contrast_blocks=x[1], **general_params)
+        plot_results(name=x[0], high_contrast_blocks=x[1], a2show=np.array([INFINIT_A] * len(x[1])), **general_params)
+
+
+    # list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
+    gather_experiments(names=names, high_contrast_blocks_list=high_contrast_blocks_list,
+                       reduced_basis_builder=ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
+                       name=f"Geom_{general_params['mesh_discretization_per_dim']}", **general_params)
+
+    high_contrast_blocks = [
+        [(0, 0), (1, 1), (2, 2), (3, 3)],
+        [(0, 2), (1, 3), (2, 0), (3, 1)],
+        [(1, 0), (0, 1), (3, 2), (2, 3)],
+        [(0, 3), (1, 2), (2, 1), (3, 0)]
+    ]
+    names = [f"{general_params['mesh_discretization_per_dim']}_NotGeomAssumptionsD{i + 1}" for i in
+             range(len(high_contrast_blocks))]
+    high_contrast_blocks_list = [high_contrast_blocks[:i + 1] for i in range(len(high_contrast_blocks))]
+
+    # list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
+    gather_experiments(names=names, high_contrast_blocks_list=high_contrast_blocks_list,
+                       reduced_basis_builder=ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
+                       name=f"NotGeom_{general_params['mesh_discretization_per_dim']}", **general_params)
+    # 6241

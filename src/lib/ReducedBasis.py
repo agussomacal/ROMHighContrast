@@ -54,7 +54,7 @@ class BaseReducedBasis:
         return sm.generate_fm_solutions(a=a, coefficients_rom=self.basis)
 
     def projection(self, sm: SolutionsManager, true_solutions: np.ndarray):
-        return sm.project_solutions(true_solutions, self.basis, optim_method="lsq")
+        return sm.project_solutions(true_solutions, self.basis)
 
     def state_estimation(self, sm: SolutionsManager, measurement_points: np.ndarray, measurements: np.ndarray,
                          return_coefs=False):
@@ -100,8 +100,7 @@ class ReducedBasisGreedy(BaseReducedBasis):
     color = "Green"
     marker = "."
 
-    def __init__(self, optim_method="lsq", greedy_for=GREEDY_FOR_H10):
-        self.optim_method = optim_method
+    def __init__(self, greedy_for=GREEDY_FOR_GALERKIN):
         self.greedy_for = greedy_for
         self.name = "Greedy " + self.greedy_for
         self.linestyle = "solid" if greedy_for == GREEDY_FOR_H10 else "dashed"
@@ -117,8 +116,7 @@ class ReducedBasisGreedy(BaseReducedBasis):
         a = []
         for _ in tqdm(range(n), desc="Obtaining greedy basis."):
             if self.greedy_for == GREEDY_FOR_H10:
-                approx_solutions_coefs = sm.project_solutions(solutions=solutions2train, coefficients_rom=basis_orth,
-                                                              optim_method=self.optim_method)
+                approx_solutions_coefs = sm.project_solutions(solutions=solutions2train, coefficients_rom=basis_orth)
             elif self.greedy_for == GREEDY_FOR_GALERKIN:
                 approx_solutions_coefs = sm.generate_fm_solutions(a=a2train, coefficients_rom=basis_orth)
             else:
@@ -138,33 +136,44 @@ class ReducedBasisGreedy(BaseReducedBasis):
         return self
 
 
-def get_inf_solutions_starting_basis(solutions2train, a2train):
+def get_inf_solutions_starting_basis(solutions2train, a2train, only_one_block=True):
+    """
+    Choose among the solutions presented those that have only one of the subdomains going to infinity.
+    The combinations should be approximating by linear combination of this basic ones.
+    """
     num_hc_blocks = np.sum(np.array(a2train) == INFINIT_A, axis=(-1, -2))
-    chosen_ix = np.ravel(np.where(num_hc_blocks == 1))
-    free_ix = np.ravel(np.where(num_hc_blocks != 1))
+    chosen_ix = np.ravel(np.where(num_hc_blocks == 1 if only_one_block else num_hc_blocks != 0))
+    free_ix = np.ravel(np.where(num_hc_blocks != 1 if only_one_block else num_hc_blocks == 0))
     return solutions2train[chosen_ix], a2train[chosen_ix], solutions2train[free_ix], a2train[free_ix]
 
 
 def get_starting_basis(solutions2train, a2train, add_inf_solutions=True):
     if add_inf_solutions:
         # choose the high contrast solutions available in the training set
-        basis, a, solutions2train, a2train = get_inf_solutions_starting_basis(solutions2train, a2train)
+        basis, a, solutions2train, a2train = get_inf_solutions_starting_basis(solutions2train, a2train,
+                                                                              only_one_block=False)
     else:
+        basis, a, solutions2train, a2train = get_inf_solutions_starting_basis(solutions2train, a2train,
+                                                                              only_one_block=False)
         # do nothing, just initialize
-        basis = np.array([])
-        a = np.array([])
+        basis = np.empty((0, np.shape(solutions2train)[1]))
+        a = np.empty((0,) + np.shape(a2train)[1:])
     return basis, a, solutions2train, a2train
 
 
 class ReducedBasisRandom(BaseReducedBasis):
-    name = "Random"
     color = "blue"
     marker = "*"
     linestyle = "solid"
 
+    def __init__(self, add_inf_solutions=True):
+        self.add_inf_solutions = add_inf_solutions
+        self.name = "Random" + (r" $\infty$" if add_inf_solutions else "")
+        super().__init__()
+
     def build(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
-              solutions2train_h1norm=1, add_inf_solutions=True, seed=42, **kwargs):
-        basis, a, solutions2train, a2train = get_starting_basis(solutions2train, a2train, add_inf_solutions)
+              solutions2train_h1norm=1, seed=42, **kwargs):
+        basis, a, solutions2train, a2train = get_starting_basis(solutions2train, a2train, self.add_inf_solutions)
         np.random.seed(seed)
         chosen_ix = np.random.choice(len(solutions2train), size=n, replace=False)
         super().set(basis=np.vstack((basis, solutions2train[chosen_ix]))[:n],
