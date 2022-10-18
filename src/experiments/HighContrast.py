@@ -522,7 +522,7 @@ if __name__ == "__main__":
              range(len(high_contrast_blocks))]
     high_contrast_blocks_list = [high_contrast_blocks[:i + 1] for i in range(len(high_contrast_blocks))]
 
-    list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
+    # list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
     # gather_experiments(names=names, high_contrast_blocks_list=high_contrast_blocks_list,
     #                    reduced_basis_builder=ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
     #                    name=f"NotGeom_{general_params['mesh_discretization_per_dim']}", **general_params)
