@@ -28,12 +28,12 @@ def squared_subplots(N_subplots, axes_xy_proportions=(4, 4)):
             yield ax[i, j]
 
 
-def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=None):
+def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=None, colorbar=True):
     if contour_levels:
         h = ax.contourf(x, y, u_reshaped, levels=contour_levels, origin='lower')
-        plt.colorbar(h)
     else:
         h = ax.imshow(u_reshaped, vmin=vmin, vmax=vmax, origin='lower')
+    if colorbar:
         plt.colorbar(h)
     ax.vlines(np.linspace(*sm.x_domain, num=sm.blocks_geometry[1] + 1)[1:-1], ymin=sm.y_domain[0], ymax=sm.y_domain[1],
               linestyle="dashed", alpha=0.7, color="black")
@@ -42,7 +42,7 @@ def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=No
 
 
 def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_per_dim_to_plot=100, contour_levels=0,
-                            axes_xy_proportions=(4, 4)):
+                            axes_xy_proportions=(4, 4), titles=None, colorbar=True):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (ax, u) in enumerate(
@@ -50,7 +50,10 @@ def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_pe
         u = sm.evaluate_solutions(np.concatenate((x.reshape((-1, 1)), y.reshape((-1, 1))), axis=1), solutions=[u])
         if diffusion_coefficients is not None:
             ax.set_title(f"a={np.round(np.reshape(diffusion_coefficients[i], sm.blocks_geometry)[::-1], decimals=2)}")
-        plot_solution(ax, x, y, u.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm, contour_levels)
+        elif titles is not None:
+            ax.set_title(titles[i])
+        plot_solution(ax, x, y, u.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm, contour_levels,
+                      colorbar=colorbar)
         ax.xaxis.set_major_locator(ticker.NullLocator())
         ax.yaxis.set_major_locator(ticker.NullLocator())
     plt.tight_layout()

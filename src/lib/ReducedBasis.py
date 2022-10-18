@@ -61,7 +61,7 @@ class BaseReducedBasis:
         rb_evaluations_in_points = sm.evaluate_solutions(measurement_points, self.basis)
         c = np.linalg.lstsq(rb_evaluations_in_points.T, measurements.T, rcond=-1)[0]
         solution_estimations = c.T @ np.array(self.basis)
-        return c, solution_estimations if return_coefs else solution_estimations
+        return (c, solution_estimations) if return_coefs else solution_estimations
 
     def parameter_estimation_inverse(self, c):
         """
