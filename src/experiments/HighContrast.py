@@ -180,15 +180,16 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()],
         for rb_name in reduced_basis_2show:
             if n <= vn_max_dim2do_stats and (recalculate or n not in data[rb_name]["errors"].keys()):
                 rb = data[rb_name]["basis"][:n]
-                rb.orthonormalize()
 
                 se_time, (c, se_approx_solutions) = calculate_time(rb.state_estimation, verbose)(
                     sm=sm, measurement_points=measurement_points, measurements=measurements, return_coefs=True)
+                inv_time, inv_parameters = calculate_time(rb.parameter_estimation_inverse, verbose)(c=c)
+                lin_time, lin_parameters = calculate_time(rb.parameter_estimation_linear, verbose)(c=c)
+
+                rb.orthonormalize()
                 fm_time, fm_approx_solutions = calculate_time(rb.forward_modeling, verbose)(sm=sm, a=a)
                 pj_time, pj_approx_solutions = calculate_time(rb.projection, verbose)(sm=sm,
                                                                                       true_solutions=data["solutions"])
-                inv_time, inv_parameters = calculate_time(rb.parameter_estimation_inverse, verbose)(c=c)
-                lin_time, lin_parameters = calculate_time(rb.parameter_estimation_linear, verbose)(c=c)
 
                 fm_error = calculate_time(sm.H10norm, verbose)(solutions=fm_approx_solutions - data["solutions"])[1]
                 pj_error = calculate_time(sm.H10norm, verbose)(solutions=pj_approx_solutions - data["solutions"])[1]
@@ -211,7 +212,7 @@ def experiment(name, reduced_basis_builders=[ReducedBasisGreedy()],
                 )
 
                 joblib.dump(data, data_path)
-    return sm, data
+    return sm, data, a, a_high_contrast
 
 
 type_of_problem_dict = {
@@ -241,10 +242,27 @@ def plot_rates_of_convergence(ax, data, reduced_basis_2show, type_of_problems, c
     ax.set_xlabel(r"$\mathrm{dim}(V_n)$")
     ax.set_ylabel(r"maximal $H^1_0$ error")
     ax.set_yscale("log")
-    # handles, labels = fig.gca().get_legend_handles_labels()
-    # order = np.argsort(labels)
-    # ax.legend([handles[idx] for idx in order], [labels[idx] for idx in order])
     ax.legend()
+
+
+def plot_error_paths(ax, data, reduced_basis_2show, type_of_problem, a_high_contrast):
+    for rb_name in reduced_basis_2show:
+        ax.set_title(f"Reduced basis: {rb_name}")
+        rb_stats = data[rb_name]["errors"]
+        ahc = 1 / np.max(a_high_contrast, axis=-1)
+        order = np.argsort(ahc)
+        for n in sorted(rb_stats.keys()):
+            error = rb_stats[n][TypeOfProblems._fields.index(type_of_problem)].max(axis=(-1, -2)) \
+                if "parameter_estimation" in type_of_problem \
+                else rb_stats[n][TypeOfProblems._fields.index(type_of_problem)]
+            ax.plot(ahc[order], error[order], label=n,
+                    marker=None,
+                    c=cm.get_cmap('viridis')((max(rb_stats.keys())-n) / max(rb_stats.keys())),  # Spectral
+                    )
+        ax.set_xlabel(r"$1/y_1$")
+        ax.set_ylabel(r"$H^1_0$ error")
+        ax.set_yscale("log")
+        # ax.legend(bbox_to_anchor=(1.01, 0.5), loc="center left")
 
 
 def plot_results(name, reduced_basis_builders, a2show, high_contrast_blocks, blocks_geometry,
@@ -474,14 +492,14 @@ if __name__ == "__main__":
         "reduced_basis_builders": reduced_basis_builders,
         "mesh_discretization_per_dim": 20,  # 20
         "diff_coef_refinement": 10,  # 30
-        "num_measurements": 50,
+        "num_measurements": 100,
         "num_cores": 1,
         "max_num_samples_offline": 1000,
         "seed": 42,
         "vn_max_dim": 15,
         "vn_max_dim2do_stats": None,  # 6 None,
-        "recalculate": False,
-        "recalculate_basis": False,
+        "recalculate": True,
+        "recalculate_basis": True,
         "blocks_geometry": (4, 4),
         "method": "lsqsparse",
         "verbose": True
@@ -506,7 +524,7 @@ if __name__ == "__main__":
         plot_results(name=x[0], high_contrast_blocks=x[1], a2show=np.array([INFINIT_A] * len(x[1])), **general_params)
 
 
-    # list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
+    list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
     # gather_experiments(names=names, high_contrast_blocks_list=high_contrast_blocks_list,
     #                    reduced_basis_builder=ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
     #                    name=f"Geom_{general_params['mesh_discretization_per_dim']}", **general_params)
@@ -522,7 +540,7 @@ if __name__ == "__main__":
              range(len(high_contrast_blocks))]
     high_contrast_blocks_list = [high_contrast_blocks[:i + 1] for i in range(len(high_contrast_blocks))]
 
-    # list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
+    list(Pool(4).map(par_func, zip(names, high_contrast_blocks_list)))
     # gather_experiments(names=names, high_contrast_blocks_list=high_contrast_blocks_list,
     #                    reduced_basis_builder=ReducedBasisGreedy(greedy_for=GREEDY_FOR_GALERKIN),
     #                    name=f"NotGeom_{general_params['mesh_discretization_per_dim']}", **general_params)
