@@ -1,3 +1,4 @@
+from logging import warning
 from typing import List
 
 import numpy as np
@@ -97,9 +98,6 @@ GREEDY_FOR_GALERKIN = "galerkin"
 
 
 class ReducedBasisGreedy(BaseReducedBasis):
-    color = "Green"
-    marker = "."
-
     def __init__(self, greedy_for=GREEDY_FOR_GALERKIN):
         self.greedy_for = greedy_for
         self.name = "Greedy " + self.greedy_for
@@ -162,10 +160,6 @@ def get_starting_basis(solutions2train, a2train, add_inf_solutions=True):
 
 
 class ReducedBasisRandom(BaseReducedBasis):
-    color = "blue"
-    marker = "*"
-    linestyle = "solid"
-
     def __init__(self, add_inf_solutions=True):
         self.add_inf_solutions = add_inf_solutions
         self.name = "Random" + (r" $\infty$" if add_inf_solutions else "")
@@ -182,14 +176,20 @@ class ReducedBasisRandom(BaseReducedBasis):
 
 
 class ReducedBasisPCA(BaseReducedBasis):
-    name = "Random"
-    color = "grey"
-    linestyle = "solid"
-    marker = "x"
+    def __init__(self, add_inf_solutions = True):
+        self.add_inf_solutions = add_inf_solutions
+        self.name = "PCA" + (r" $\infty$" if add_inf_solutions else "")
+        super().__init__()
 
     def build(self, n: int, sm: SolutionsManager, solutions2train, a2train: List[np.ndarray] = (()),
               solutions2train_h1norm=1, add_inf_solutions=True, seed=42, **kwargs):
-        raise Exception("Not implemented.")
+        basis, a, solutions2train, a2train = get_starting_basis(solutions2train, a2train, self.add_inf_solutions)
+        # log-transform data before performing PCA?
+        # pca = PCA(n_components=n).fit(np.log(solutions2train))
+        # super().set(basis=np.vstack((basis, np.exp(pca.components_)))[:n],
+        #             a=np.vstack((a, a2train))[:n])
         pca = PCA(n_components=n).fit(solutions2train)
-        super().set(basis=pca.components_, a=a2train[chosen_ix])
+        super().set(basis=np.vstack((basis, pca.components_))[:n],
+                    a=np.vstack((a, a2train))[:n])
+        warning("PCA method has not been adapted for inverse parameter estimation, the a coefficients are not correct.")
         return self
