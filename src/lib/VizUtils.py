@@ -42,7 +42,7 @@ def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=No
 
 
 def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_per_dim_to_plot=100, contour_levels=0,
-                            axes_xy_proportions=(4, 4), titles=None, colorbar=True):
+                            axes_xy_proportions=(4, 4), titles=None, colorbar=False):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (ax, u) in enumerate(
@@ -60,7 +60,8 @@ def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_pe
 
 
 def plot_approximate_solutions_together(sm, diffusion_coefficients, solutions, approximate_solutions,
-                                        num_points_per_dim_to_plot=100, contour_levels=0, measurement_points=None):
+                                        num_points_per_dim_to_plot=100, contour_levels=0, measurement_points=None,
+                                        colorbar=False):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (a, u_aprox, u_true) in enumerate(zip(diffusion_coefficients, approximate_solutions, solutions)):
@@ -75,10 +76,10 @@ def plot_approximate_solutions_together(sm, diffusion_coefficients, solutions, a
         vmax = np.max((np.max(ua), np.max(ut)))
         plot_solution(ax[0], x, y, ua.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm,
                       contour_levels,
-                      vmin=vmin, vmax=vmax)
+                      vmin=vmin, vmax=vmax, colorbar=colorbar)
         plot_solution(ax[1], x, y, ut.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm,
                       contour_levels,
-                      vmin=vmin, vmax=vmax)
+                      vmin=vmin, vmax=vmax, colorbar=colorbar)
 
         ax[0].set_title("\n Approximation")
         ax[1].set_title("\n Solution")
