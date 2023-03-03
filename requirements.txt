@@ -1,7 +1,9 @@
 pytest
 numpy
 scipy
-matplotlib
+matplotlib==3.1.2
 scikit-learn
 tqdm
 pathos
+ipywidgets==7
+# python -m ipykernel install --user --name venv --display-name "ROM"
