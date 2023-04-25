@@ -6,3 +6,4 @@ scikit-learn
 tqdm
 pathos
 -i https://test.pypi.org/simple/ PerplexityLab==0.0.1b0
+seaborn
