@@ -5,6 +5,8 @@ import matplotlib.pylab as plt
 import numpy as np
 from matplotlib import ticker
 
+AXES_PROPORTIONS = (3, 3)
+
 
 @contextmanager
 def save_fig(pathplot, axes_xy_proportions=(4, 4), dpi=None):
@@ -42,7 +44,7 @@ def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=No
 
 
 def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_per_dim_to_plot=100, contour_levels=0,
-                            axes_xy_proportions=(4, 4), titles=None, colorbar=False):
+                            axes_xy_proportions=AXES_PROPORTIONS, titles=None, colorbar=False):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (ax, u) in enumerate(
@@ -61,7 +63,7 @@ def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_pe
 
 def plot_approximate_solutions_together(sm, diffusion_coefficients, solutions, approximate_solutions,
                                         num_points_per_dim_to_plot=100, contour_levels=0, measurement_points=None,
-                                        colorbar=False):
+                                        colorbar=False, axes_xy_proportions=AXES_PROPORTIONS):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (a, u_aprox, u_true) in enumerate(zip(diffusion_coefficients, approximate_solutions, solutions)):
@@ -69,7 +71,7 @@ def plot_approximate_solutions_together(sm, diffusion_coefficients, solutions, a
                                    solutions=[u_aprox])
         ut = sm.evaluate_solutions(np.concatenate((x.reshape((-1, 1)), y.reshape((-1, 1))), axis=1), solutions=[u_true])
 
-        fig, ax = plt.subplots(ncols=2)
+        fig, ax = plt.subplots(ncols=2, figsize=(axes_xy_proportions[0] * 2, axes_xy_proportions[1]))
         fig.suptitle(f"State estimation of \n a={np.round(np.reshape(a, sm.blocks_geometry)[::-1], decimals=2)}")
 
         vmin = np.min((np.min(ua), np.min(ut)))
