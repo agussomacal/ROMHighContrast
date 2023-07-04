@@ -1,9 +1,15 @@
 pytest
-numpy
-scipy
 matplotlib
-scikit-learn
 tqdm
+numpy
 pathos
--i https://test.pypi.org/simple/ PerplexityLab==0.0.1b0
+scipy
+scikit-learn
+ipywidgets
 seaborn
+joblib
+pandas
+makefun
+eco2ai
+python-benedict
+-i https://test.pypi.org/simple/PerplexityLab==0.0.1b0
