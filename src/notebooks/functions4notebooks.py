@@ -46,15 +46,16 @@ def vizualize_approximations(sm, measurements_sampling_method_dict, reduced_basi
                              diffusion_contrast_lower, diffusion_contrast_upper, max_vn_dim,
                              num_points_per_dim_to_plot=50, axes_xy_proportions=(3, 3)):
     def show_approx(n_dim, rb_methods, m, measurements_sampling_method, state_estimation_method, **kwargs):
-        measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
-                                                                                             sm.y_domain)
-        diffusion_coefficients = np.array([list(kwargs.values())]).reshape((1,) + sm.blocks_geometry)
-        solution = sm.generate_solutions(diffusion_coefficients)
-        measurements_online = sm.evaluate_solutions(measurement_points, solutions=solution)
 
         approximate_solutions = []
         for rb_method in rb_methods:
             rb = reduced_basis_dict[rb_method][:n_dim]
+            measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
+                                                                                                 sm.y_domain, basis=rb,
+                                                                                                 sm=sm)
+            diffusion_coefficients = np.array([list(kwargs.values())]).reshape((1,) + sm.blocks_geometry)
+            solution = sm.generate_solutions(diffusion_coefficients)
+            measurements_online = sm.evaluate_solutions(measurement_points, solutions=solution)
             measurements_reduced_basis = sm.evaluate_solutions(measurement_points, solutions=rb)
             approximate_solutions.append(
                 state_estimation_method_dict[state_estimation_method](measurement_points, measurements_online, rb)[1])
@@ -142,19 +143,25 @@ error_metrics_dict = {
 def visualize_convergence(sm, solutions, measurements_sampling_method_dict, reduced_basis_dict,
                           state_estimation_method_dict, max_vn_dim):
     def show_convergence(rb_methods, measurements_sampling_method, m, state_estimation_method, error_metric, noise):
-        measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
-                                                                                             sm.y_domain)
-        measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
         for rb_method in rb_methods:
-            errors = [error_metrics_dict[error_metric](
-                solutions - state_estimation_method_dict[state_estimation_method](measurement_points, measurements,
-                                                                                  np.reshape(
-                                                                                      reduced_basis_dict[rb_method][:n],
-                                                                                      (n, -1)))[1]
-            ) for n in range(1, max_vn_dim)]
+            errors = []
+            for n in range(1, max_vn_dim):
+                basis = reduced_basis_dict[rb_method][:n]
+                if measurements_sampling_method == "Optim" or len(errors) == 0:
+                    measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
+                                                                                                         sm.y_domain,
+                                                                                                         basis=basis, sm=sm)
+                    measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
+                errors.append(error_metrics_dict[error_metric](
+                    solutions - state_estimation_method_dict[state_estimation_method](measurement_points, measurements,
+                                                                                      np.reshape(
+                                                                                          basis,
+                                                                                          (n, -1)))[1]
+                ))
             plt.plot(np.arange(1, max_vn_dim, dtype=int), errors, ".-", label=rb_method)
         plt.xticks(np.arange(1, max_vn_dim, dtype=int))
         plt.yscale("log")
+        plt.grid()
         plt.legend()
         plt.show()
 
