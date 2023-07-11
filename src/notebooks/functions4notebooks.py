@@ -1,14 +1,11 @@
-from typing import List
-
 import itertools
+
+import ipywidgets as widgets
 import matplotlib.pylab as plt
 import numpy as np
-from sklearn.decomposition import PCA
-import ipywidgets as widgets
 from ipywidgets import GridspecLayout
 
-from src.lib.VizUtils import plot_solutions_together, plot_approximate_solutions_together, plot_solution
-from src.lib.SolutionsManagers import SolutionsManagerFEM
+from src.lib.VizUtils import plot_solutions_together
 
 
 def visualize_intuition(sm, diffusion_contrast_lower, diffusion_contrast_upper,
@@ -150,7 +147,8 @@ def visualize_convergence(sm, solutions, measurements_sampling_method_dict, redu
                 if measurements_sampling_method == "Optim" or len(errors) == 0:
                     measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
                                                                                                          sm.y_domain,
-                                                                                                         basis=basis, sm=sm)
+                                                                                                         basis=basis,
+                                                                                                         sm=sm)
                     measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
                 errors.append(error_metrics_dict[error_metric](
                     solutions - state_estimation_method_dict[state_estimation_method](measurement_points, measurements,
