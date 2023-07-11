@@ -133,21 +133,14 @@ def vizualize_approximations(sm, measurements_sampling_method_dict, reduced_basi
     display(global_grid, out)
 
 
-#
-# def state_estimation_pipeline(reduced_basis, measurement_points, measurements, measurements_reduced_basis,
-#                               state_estimation_method):
-#     _, approximate_solutions = \
-#         state_estimation_method_dict[state_estimation_method](measurement_points, measurements, rb)[1]
-#     return approximate_solutions
+error_metrics_dict = {
+    "L2": lambda x: np.mean(np.sqrt(np.mean(x ** 2, axis=-1))),
+    "Linf": lambda x: np.max(np.sqrt(np.mean(x ** 2, axis=-1)))
+}
 
 
 def visualize_convergence(sm, solutions, measurements_sampling_method_dict, reduced_basis_dict,
                           state_estimation_method_dict, max_vn_dim):
-    error_metrics_dict = {
-        "L2": lambda x: np.mean(np.sqrt(np.mean(x ** 2, axis=-1))),
-        "Linf": lambda x: np.max(np.sqrt(np.mean(x ** 2, axis=-1)))
-    }
-
     def show_convergence(rb_methods, measurements_sampling_method, m, state_estimation_method, error_metric, noise):
         measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
                                                                                              sm.y_domain)
@@ -212,4 +205,78 @@ def visualize_convergence(sm, solutions, measurements_sampling_method_dict, redu
         style=style)
 
     out = widgets.interactive_output(show_convergence, available_widgets)
+    display(global_grid, out)
+
+
+def visualize_state_estimation_methods(sm, solutions, measurements_sampling_method_dict, reduced_basis_dict,
+                                       state_estimation_method_dict, max_vn_dim):
+    def show_semethod(rb_method, measurements_sampling_method, m, state_estimation_methods, error_metric, noise):
+        measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
+                                                                                             sm.y_domain)
+        measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
+        for state_estimation_method in state_estimation_methods:
+            errors = [error_metrics_dict[error_metric](
+                solutions - state_estimation_method_dict[state_estimation_method](measurement_points, measurements,
+                                                                                  np.reshape(
+                                                                                      reduced_basis_dict[rb_method][:n],
+                                                                                      (n, -1)))[1]
+            ) for n in range(1, max_vn_dim)]
+            plt.plot(np.arange(1, max_vn_dim), errors, ".-", label=state_estimation_method)
+        plt.xticks(np.arange(1, max_vn_dim, dtype=int))
+        plt.grid()
+        plt.yscale("log")
+        plt.ylim((None, 1e-1))
+        plt.legend()
+        plt.show()
+
+    style = {'description_width': 'initial'}
+    global_grid = GridspecLayout(4, 2)
+    available_widgets = dict()
+
+    global_grid[0, 0] = available_widgets["error_metric"] = widgets.Dropdown(
+        options=list(error_metrics_dict.keys()),
+        description="Error metric: ",
+        disabled=False,
+        style=style)
+    global_grid[0, 1] = available_widgets["noise"] = widgets.FloatText(
+        value=0,
+        min=0,
+        max=1,
+        # step=0.01,
+        description="Noise: ",
+        disabled=False,
+        style=style)
+
+    global_grid[1, :] = available_widgets["rb_method"] = widgets.Dropdown(
+        options=list(reduced_basis_dict.keys()),
+        value=list(reduced_basis_dict.keys())[0],
+        description="Reduced Basis: ",
+        disabled=False,
+        style=style)
+
+    global_grid[2, 0] = available_widgets["measurements_sampling_method"] = widgets.Dropdown(
+        options=list(measurements_sampling_method_dict.keys()),
+        # value=list(measurements_sampling_method_dict.keys()),
+        description="Measurements sampling method: ",
+        disabled=False,
+        style=style)
+
+    global_grid[2, 1] = available_widgets["m"] = widgets.IntText(
+        value=50, min=max_vn_dim,
+        # max=10 * max_vn_dim,
+        # step=1,
+        description='Number of measurements:',
+        disabled=False,
+        continuous_update=False,
+        orientation='horizontal',
+        readout=True,
+        style=style)
+    global_grid[3, :] = available_widgets["state_estimation_methods"] = widgets.SelectMultiple(
+        options=list(state_estimation_method_dict.keys()),
+        value=list(state_estimation_method_dict.keys()),
+        description="State estimation method: ",
+        disabled=False,
+        style=style)
+
+    out = widgets.interactive_output(show_semethod, available_widgets)
     display(global_grid, out)
