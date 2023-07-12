@@ -5,8 +5,8 @@ import numpy as np
 from sklearn.decomposition import PCA
 from tqdm import tqdm
 
-from lib.Estimators import EstimatorInv, EstimatorLinear
-from lib.SolutionsManagers import SolutionsManager
+from src.lib.Estimators import EstimatorInv, EstimatorLinear
+from src.lib.SolutionsManagers import SolutionsManager
 
 INFINIT_A = 1e10  # 1e50
 
@@ -15,12 +15,17 @@ def get_high_contrast_coefficient(a):
     return np.array([np.max(coefs, axis=(-1, -2)) for coefs in a])
 
 
+def orthonormalize_base(rb):
+    q, r = np.linalg.qr(np.array(rb).T)
+    rb = q.T
+    return rb
+
+
 def sort_orthogonalize_base(a_selected, rb):
     order = np.argsort(1 / a_selected)
     a_selected = a_selected[order]
     rb = rb[order, :]
-    q, r = np.linalg.qr(rb.T)
-    rb = q.T
+    rb = orthonormalize_base(rb[order, :])
     return a_selected, rb
 
 
@@ -176,7 +181,7 @@ class ReducedBasisRandom(BaseReducedBasis):
 
 
 class ReducedBasisPCA(BaseReducedBasis):
-    def __init__(self, add_inf_solutions = True):
+    def __init__(self, add_inf_solutions=True):
         self.add_inf_solutions = add_inf_solutions
         self.name = "PCA" + (r" $\infty$" if add_inf_solutions else "")
         super().__init__()

@@ -53,13 +53,13 @@ class SolutionsManager:
     def __str__(self):
         return self.__class__.__name__
 
-    @property
-    def dim_each_coord(self):
-        return int(np.sqrt(self.vspace_dim))
-
     def H10norm(self, solutions: List[np.ndarray]):
         # return np.sqrt(np.einsum("abij,ki,kj->k", self.A_preassembled, solutions, solutions))
         return np.sqrt(np.einsum("ij,ki,kj->k", self.A_preassembled4h1_norm, solutions, solutions))
+
+    @staticmethod
+    def l2norm(solutions: List[np.ndarray]):
+        return np.sqrt(np.sum(np.square(solutions), axis=1))
 
     def generate_solutions(self, a2try):
         return np.array(
