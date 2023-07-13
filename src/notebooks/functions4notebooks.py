@@ -221,15 +221,23 @@ def visualize_state_estimation_methods(sm, solutions, measurements_sampling_meth
                                        state_estimation_method_dict, max_vn_dim):
     def show_semethod(rb_method, measurements_sampling_method, m, state_estimation_methods, error_metric, noise,
                       vn_range):
-        measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
-                                                                                             sm.y_domain)
-        measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
+        # measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
+        #                                                                                      sm.y_domain)
+        # measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
         for state_estimation_method in state_estimation_methods:
             errors = []
             for n in range(*vn_range):
+                basis = reduced_basis_dict[rb_method][:n]
+                if measurements_sampling_method == "Optim" or len(errors) == 0:
+                    measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
+                                                                                                         sm.y_domain,
+                                                                                                         basis=basis,
+                                                                                                         sm=sm)
+                    measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
+
                 v = solutions - \
                     state_estimation_method_dict[state_estimation_method](
-                        measurement_points, measurements, np.reshape(reduced_basis_dict[rb_method][:n], (n, -1)))
+                        measurement_points, measurements, np.reshape(basis, (n, -1)))
                 errors.append(error_metrics_dict[error_metric](v))
             # errors = [error_metrics_dict[error_metric](
             #     solutions - state_estimation_method_dict[state_estimation_method](measurement_points, measurements,
