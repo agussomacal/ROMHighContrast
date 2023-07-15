@@ -24,7 +24,7 @@ def visualize_intuition(sm, diffusion_contrast_lower, diffusion_contrast_upper,
 
     def show_solution(**kwargs):
         diffusion_coefficients = np.array([list(kwargs.values())]).reshape((1,) + sm.blocks_geometry)
-        solutions_intuition = sm.generate_solutions(diffusion_coefficients)
+        solutions_intuition = sm.generate_solutions(diffusion_coefficients[:, ::-1])
 
         plot_solutions_together(
             sm,
@@ -52,7 +52,7 @@ def vizualize_approximations(sm, measurements_sampling_method_dict, reduced_basi
                                                                                                  sm.y_domain, basis=rb,
                                                                                                  sm=sm)
             diffusion_coefficients = np.array([list(kwargs.values())]).reshape((1,) + sm.blocks_geometry)
-            solution = sm.generate_solutions(diffusion_coefficients)
+            solution = sm.generate_solutions(diffusion_coefficients[:, ::-1])
             measurements_online = sm.evaluate_solutions(measurement_points, solutions=solution)
             approximate_solutions.append(
                 state_estimation_method_dict[state_estimation_method](measurement_points, measurements_online, rb))
@@ -317,9 +317,9 @@ def visualize_state_estimation_methods(sm, solutions, measurements_sampling_meth
 
 
 def visualize_all(sm, solutions, measurements_sampling_method_dict, reduced_basis_dict,
-                                       state_estimation_method_dict, max_vn_dim):
+                  state_estimation_method_dict, max_vn_dim):
     def show(rb_method, measurements_sampling_method, m, state_estimation_methods, error_metric, noise,
-                      vn_range):
+             vn_range):
         measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
                                                                                              sm.y_domain)
         measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
