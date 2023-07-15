@@ -51,7 +51,7 @@ def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_pe
             zip(squared_subplots(len(solutions), axes_xy_proportions=axes_xy_proportions), solutions)):
         u = sm.evaluate_solutions(np.concatenate((x.reshape((-1, 1)), y.reshape((-1, 1))), axis=1), solutions=[u])
         if diffusion_coefficients is not None:
-            ax.set_title(f"a={np.round(np.reshape(diffusion_coefficients[i], sm.blocks_geometry)[::-1], decimals=2)}")
+            ax.set_title(f"a={np.round(np.reshape(diffusion_coefficients[i], sm.blocks_geometry), decimals=2)}")
         elif titles is not None:
             ax.set_title(titles[i])
         plot_solution(ax, x, y, u.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm, contour_levels,

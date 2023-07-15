@@ -24,16 +24,17 @@ def visualize_intuition(sm, diffusion_contrast_lower, diffusion_contrast_upper,
 
     def show_solution(**kwargs):
         diffusion_coefficients = np.array([list(kwargs.values())]).reshape((1,) + sm.blocks_geometry)
-        solutions_intuition = sm.generate_solutions(diffusion_coefficients[:, ::-1, :])
+        solutions_intuition = sm.generate_solutions(diffusion_coefficients)
 
         plot_solutions_together(
             sm,
-            diffusion_coefficients=diffusion_coefficients[:, ::-1, :],
+            diffusion_coefficients=diffusion_coefficients,
             solutions=solutions_intuition,
             num_points_per_dim_to_plot=num_points_per_dim_to_plot,
             contour_levels=7,
             axes_xy_proportions=axes_xy_proportions
         )
+        plt.show()
 
     out = widgets.interactive_output(show_solution, coefs_sliders)
     display(grid, out)
