@@ -1,11 +1,13 @@
-pytest
 matplotlib
-tqdm
 numpy
 pathos
-scipy
 scikit-learn
+
 ipywidgets
+
+tqdm
+pytest
+scipy
 seaborn
 joblib
 pandas
