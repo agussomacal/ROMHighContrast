@@ -3,7 +3,7 @@
 1. This repository has all the code implementation of the paper 
 [Reduced order modeling for elliptic problems with high contrast diffusion coefficients](https://hal.archives-ouvertes.fr/hal-03549810/document)
 
-2. The [notebook](https://github.com/agussomacal/ROMHighContrast/src/notebooks/InverseProblemPipeline.ipynb) for the practical session of CEMRACS 2023 [Linear and Nonlinear Schemes for Forward Model Reduction and Inverse Problems](http://smai.emath.fr/cemracs/cemracs23/summer-school.html)
+2. The [notebook](https://github.com/agussomacal/ROMHighContrast/blob/main/src/notebooks/InverseProblemPipeline.ipynb) for the practical session of CEMRACS 2023 [Linear and Nonlinear Schemes for Forward Model Reduction and Inverse Problems](http://smai.emath.fr/cemracs/cemracs23/summer-school.html)
 
 To run the code on binder or Colab without setting up locally any environment go to:
 - [![Open in Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/agussomacal/ROMHighContrast/main?labpath=%2Fsrc%2Fnotebooks%2FHighContrast.ipynb).
