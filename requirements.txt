@@ -1,16 +1,16 @@
+matplotlib
 numpy
+scipy
 pathos
 scikit-learn
 
-ipywidgets
-
 tqdm
-pytest
-scipy
 seaborn
 joblib
-pandas
+
+ipywidgets
+
 makefun
 eco2ai
 python-benedict
--i https://test.pypi.org/simple/PerplexityLab==0.0.1b0
+git+https://github.com/agussomacal/PerplexityLab
