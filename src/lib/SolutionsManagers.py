@@ -67,6 +67,23 @@ class SolutionsManager:
                 partial(galerkin, B_total=self.B_total, A_preassembled=self.A_preassembled, method=self.method),
                 a2try)))
 
+    def generate_riesz(self, x, norm="h10"):
+        """
+        param: x: list of measurement points [(x1, y1), ... (xm, ym)]
+        returns Riesz representers: shape (m, N)
+        """
+        B_total = self.evaluate_solutions(points=x, solutions=np.eye(self.vspace_dim))  # (N, m)
+        if norm == "l2":
+            return B_total.T  # (m, N)
+        elif norm.lower() == "h10":
+            # the evaluation operator (B_total used) in truth does not belong to H10,
+            # we need a kernel (like a gaussean) to compute the B_total correctly.
+            return np.array([np.squeeze(
+                galerkin(a=np.ones(self.blocks_geometry), B_total=B_total,
+                         A_preassembled=self.A_preassembled, method=self.method)) for xi in x])  # (m, N)
+        else:
+            raise Exception("Not implemented.")
+
     def generate_fm_solutions(self, a: Union[np.ndarray, List[np.ndarray]], coefficients_rom: List[np.ndarray]):
         if len(coefficients_rom) == 0:
             # in case no reduced basis then return 0 always.
