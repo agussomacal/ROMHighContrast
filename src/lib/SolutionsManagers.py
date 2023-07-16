@@ -76,6 +76,7 @@ class SolutionsManager:
         if norm == "l2":
             return B_total  # (m, N)
         elif norm.lower() == "h10":
+            raise Exception("Not implemented.")
             # the evaluation operator (B_total used) in truth does not belong to H10,
             # we need a kernel (like a gaussean) to compute the B_total correctly.
             return np.array([np.squeeze(
