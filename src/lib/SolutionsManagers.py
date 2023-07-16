@@ -72,15 +72,15 @@ class SolutionsManager:
         param: x: list of measurement points [(x1, y1), ... (xm, ym)]
         returns Riesz representers: shape (m, N)
         """
-        B_total = self.evaluate_solutions(points=x, solutions=np.eye(self.vspace_dim))  # (N, m)
+        B_total = self.evaluate_solutions(points=x, solutions=np.eye(self.vspace_dim)).T  # (N, m)
         if norm == "l2":
-            return B_total.T  # (m, N)
+            return B_total  # (m, N)
         elif norm.lower() == "h10":
             # the evaluation operator (B_total used) in truth does not belong to H10,
             # we need a kernel (like a gaussean) to compute the B_total correctly.
             return np.array([np.squeeze(
-                galerkin(a=np.ones(self.blocks_geometry), B_total=B_total,
-                         A_preassembled=self.A_preassembled, method=self.method)) for xi in x])  # (m, N)
+                galerkin(a=np.ones(self.blocks_geometry), B_total=B_total[i],
+                         A_preassembled=self.A_preassembled, method=self.method)) for i, xi in enumerate(x)])  # (m, N)
         else:
             raise Exception("Not implemented.")
 
