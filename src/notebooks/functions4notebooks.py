@@ -316,6 +316,95 @@ def visualize_state_estimation_methods(sm, solutions, measurements_sampling_meth
     display(global_grid, out)
 
 
+def visualize_samplers(sm, solutions, measurements_sampling_method_dict, reduced_basis_dict,
+                                       state_estimation_method_dict, max_vn_dim):
+    def show_smethod(rb_method, measurements_sampling_methods, m, state_estimation_method, error_metric, noise,
+                      vn_range):
+        for measurements_sampling_method in measurements_sampling_methods:
+            errors = []
+            for n in range(*vn_range):
+                basis = reduced_basis_dict[rb_method][:n]
+                if measurements_sampling_method == "Optim" or len(errors) == 0:
+                    measurement_points = measurements_sampling_method_dict[measurements_sampling_method](m, sm.x_domain,
+                                                                                                         sm.y_domain,
+                                                                                                         basis=basis,
+                                                                                                         sm=sm)
+                    measurements = sm.evaluate_solutions(measurement_points, solutions) + np.random.normal(scale=noise)
+
+                v = solutions - \
+                    state_estimation_method_dict[state_estimation_method](
+                        measurement_points, measurements, np.reshape(basis, (n, -1)))
+                errors.append(error_metrics_dict[error_metric](v))
+            plt.plot(np.arange(*vn_range), errors, ".--", label=measurements_sampling_method, alpha=0.75)
+        plt.xticks(np.arange(*vn_range, dtype=int))
+        plt.grid()
+        plt.yscale("log")
+        plt.ylim((None, 1e-1))
+        plt.legend()
+        plt.show()
+
+    style = {'description_width': 'initial'}
+    global_grid = GridspecLayout(4, 2)
+    available_widgets = dict()
+
+    global_grid[0, 0] = available_widgets["error_metric"] = widgets.Dropdown(
+        options=list(error_metrics_dict.keys()),
+        description="Error metric: ",
+        disabled=False,
+        style=style)
+    global_grid[0, 1] = available_widgets["noise"] = widgets.FloatText(
+        value=0,
+        min=0,
+        max=1,
+        # step=0.01,
+        description="Noise: ",
+        disabled=False,
+        style=style)
+
+    global_grid[1, :] = available_widgets["rb_method"] = widgets.Dropdown(
+        options=list(reduced_basis_dict.keys()),
+        value=list(reduced_basis_dict.keys())[0],
+        description="Reduced Basis: ",
+        disabled=False,
+        style=style)
+
+    global_grid[2, 0] = available_widgets["measurements_sampling_methods"] = widgets.SelectMultiple(
+        options=list(measurements_sampling_method_dict.keys()),
+        value=list(measurements_sampling_method_dict.keys()),
+        description="Measurements sampling method: ",
+        disabled=False,
+        style=style)
+
+    global_grid[2, 1] = available_widgets["m"] = widgets.IntText(
+        value=50, min=max_vn_dim,
+        # max=10 * max_vn_dim,
+        # step=1,
+        description='Number of measurements:',
+        disabled=False,
+        continuous_update=False,
+        orientation='horizontal',
+        readout=True,
+        style=style)
+    global_grid[3, 0] = available_widgets["state_estimation_method"] = widgets.Dropdown(
+        options=list(state_estimation_method_dict.keys()),
+        # value=list(state_estimation_method_dict.keys()),
+        description="State estimation method: ",
+        disabled=False,
+        style=style)
+
+    global_grid[3, 1] = available_widgets["vn_range"] = widgets.IntRangeSlider(
+        min=0,
+        max=max_vn_dim,
+        value=(1, max_vn_dim),
+        step=1,
+        description="dim(Vn) range: ",
+        disabled=False,
+        style=style)
+
+    out = widgets.interactive_output(show_smethod, available_widgets)
+    display(global_grid, out)
+
+
 def visualize_all(sm, solutions, measurements_sampling_method_dict, reduced_basis_dict,
                   state_estimation_method_dict, max_vn_dim):
     def show(rb_method, measurements_sampling_method, m, state_estimation_methods, error_metric, noise,
