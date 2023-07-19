@@ -335,7 +335,7 @@ def visualize_samplers(sm, solutions, measurements_sampling_method_dict, reduced
                     state_estimation_method_dict[state_estimation_method](
                         measurement_points, measurements, np.reshape(basis, (n, -1)))
                 errors.append(error_metrics_dict[error_metric](v))
-            plt.plot(np.arange(*vn_range), errors, ".--", label=measurements_sampling_method, alpha=0.75)
+            plt.plot(np.arange(*vn_range), errors, ".-", label=measurements_sampling_method)
         plt.xticks(np.arange(*vn_range, dtype=int))
         plt.grid()
         plt.yscale("log")
