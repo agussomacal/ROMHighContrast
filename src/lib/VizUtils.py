@@ -30,32 +30,38 @@ def squared_subplots(N_subplots, axes_xy_proportions=(4, 4)):
             yield ax[i, j]
 
 
-def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=None, colorbar=True):
+def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=None, colorbar=True, cmap=None,
+                  add_grid=True):
     if contour_levels:
-        h = ax.contourf(x, y, u_reshaped, levels=contour_levels, origin='lower')
+        h = ax.contourf(x, y, u_reshaped, levels=contour_levels, origin='lower', cmap=cmap)
     else:
-        h = ax.imshow(u_reshaped, vmin=vmin, vmax=vmax, origin='lower')
+        h = ax.imshow(u_reshaped, vmin=vmin, vmax=vmax, origin='lower', cmap=cmap, extent=(-1, 1, -1, 1))
     if colorbar:
         plt.colorbar(h)
-    ax.vlines(np.linspace(*sm.x_domain, num=sm.blocks_geometry[1] + 1)[1:-1], ymin=sm.y_domain[0], ymax=sm.y_domain[1],
-              linestyle="dashed", alpha=0.7, color="black")
-    ax.hlines(np.linspace(*sm.y_domain, num=sm.blocks_geometry[0] + 1)[1:-1], xmin=sm.x_domain[0], xmax=sm.x_domain[1],
-              linestyle="dashed", alpha=0.7, color="black")
+    if add_grid:
+        ax.vlines(np.linspace(*sm.x_domain, num=sm.blocks_geometry[1] + 1)[1:-1], ymin=sm.y_domain[0],
+                  ymax=sm.y_domain[1],
+                  linestyle="dashed", alpha=0.7, color="black")
+        ax.hlines(np.linspace(*sm.y_domain, num=sm.blocks_geometry[0] + 1)[1:-1], xmin=sm.x_domain[0],
+                  xmax=sm.x_domain[1],
+                  linestyle="dashed", alpha=0.7, color="black")
 
 
 def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_per_dim_to_plot=100, contour_levels=0,
-                            axes_xy_proportions=AXES_PROPORTIONS, titles=None, colorbar=False, measurement_points=None):
+                            axes_xy_proportions=AXES_PROPORTIONS, titles=None, colorbar=False, measurement_points=None,
+                            cmap=None, add_grid=True):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (ax, u) in enumerate(
             zip(squared_subplots(len(solutions), axes_xy_proportions=axes_xy_proportions), solutions)):
         u = sm.evaluate_solutions(np.concatenate((x.reshape((-1, 1)), y.reshape((-1, 1))), axis=1), solutions=[u])
-        if diffusion_coefficients is not None:
-            ax.set_title(f"a={np.round(np.reshape(diffusion_coefficients[i], sm.blocks_geometry), decimals=2)}")
-        elif titles is not None:
-            ax.set_title(titles[i])
+        if titles:
+            if diffusion_coefficients is not None:
+                ax.set_title(f"a={np.round(np.reshape(diffusion_coefficients[i], sm.blocks_geometry), decimals=2)}")
+            elif titles is not None:
+                ax.set_title(titles[i])
         plot_solution(ax, x, y, u.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm, contour_levels,
-                      colorbar=colorbar)
+                      colorbar=colorbar, cmap=cmap, add_grid=add_grid)
         ax.xaxis.set_major_locator(ticker.NullLocator())
         ax.yaxis.set_major_locator(ticker.NullLocator())
 
