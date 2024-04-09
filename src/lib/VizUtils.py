@@ -66,7 +66,7 @@ def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_pe
         ax.yaxis.set_major_locator(ticker.NullLocator())
 
         if measurement_points is not None:
-            ax.scatter(*measurement_points.T, marker="x", alpha=1, s=5, color=measurements_color)
+            ax.scatter(*measurement_points.T, marker="o", alpha=1, s=10, color=measurements_color)
     plt.tight_layout()
 
 
