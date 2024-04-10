@@ -236,39 +236,49 @@ num_cells_per_dim = 7
 sub_sampling = 5
 n = sub_sampling * num_cells_per_dim
 points_avg = measurements_sampling_method_grid(n ** 2, xlim=sm.x_domain, ylim=sm.y_domain)
-measurements_avg = sm.evaluate_solutions(
-    np.concatenate((points_avg[:, 0].reshape((-1, 1)), points_avg[:, 1].reshape((-1, 1))), axis=1),
-    solutions=[u]).ravel().tolist()
-measurements_avg = calculate_averages_from_image(np.reshape(measurements_avg, (n, n)), num_cells_per_dim)
-uavg = make_image_high_resolution(measurements_avg, num_cells_per_dim)
-fig, ax = plt.subplots(1, 1, figsize=axes_xy_proportions)
-ax.imshow(uavg, origin='lower', cmap=cmap, extent=(-1, 1, -1, 1))
-ax.xaxis.set_major_locator(ticker.NullLocator())
-ax.yaxis.set_major_locator(ticker.NullLocator())
-ax.vlines(np.linspace(*sm.x_domain, num=sm.blocks_geometry[1] + 1)[1:-1], ymin=sm.y_domain[0],
-          ymax=sm.y_domain[1],
-          linestyle="dashed", alpha=0.7, color="black")
-ax.hlines(np.linspace(*sm.y_domain, num=sm.blocks_geometry[0] + 1)[1:-1], xmin=sm.x_domain[0],
-          xmax=sm.x_domain[1],
-          linestyle="dashed", alpha=0.7, color="black")
-save_fig_without_white(f"{presentation_path}/solution_avg.png")
 
-measurements_avg = measurements_avg.ravel().tolist() + [0]
-norm = matplotlib.colors.Normalize(vmin=0, vmax=np.max(measurements_avg))
-plt.figure()
-sns.barplot(data=pd.DataFrame(np.transpose([measurements_avg,
-                                            list(range(1, num_cells_per_dim ** 2 + 2))]),
-                              columns=["measurements", "sensors", ]),
-            x="sensors", y="measurements", palette={j + 1: cmapf(norm(m)) for j, m in enumerate(measurements_avg)})
-plt.ylim([0, 0.11])
-plt.xlabel("")
-plt.ylabel("")
-plt.gca().xaxis.set_major_locator(plt.NullLocator())
-plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
-plt.box(False)
-plt.savefig(f"{presentation_path}/barplot_measurements_avg.png", bbox_inches='tight', pad_inches=0,
-            transparent=True)
-plt.close()
+T = np.linspace(0, 2 * np.pi, num_snapshots_optim)
+parameters_avg_dict = list()
+for i, t in enumerate(T):
+    # define the matrix of diffusion coefficients \theta for each solution u to be computed.
+    y = np.array([space_y(t, r=4)])
+    parameters_avg_dict.append(y[0].tolist())
+    # generate as many solutions as diffusion coefficients matrices given
+    u = sm.generate_solutions(a2try=y[:, ::-1])
+
+    measurements_avg = sm.evaluate_solutions(
+        np.concatenate((points_avg[:, 0].reshape((-1, 1)), points_avg[:, 1].reshape((-1, 1))), axis=1),
+        solutions=[u]).ravel().tolist()
+    measurements_avg = calculate_averages_from_image(np.reshape(measurements_avg, (n, n)), num_cells_per_dim)
+    uavg = make_image_high_resolution(measurements_avg, num_cells_per_dim)
+    fig, ax = plt.subplots(1, 1, figsize=axes_xy_proportions)
+    ax.imshow(uavg, origin='lower', cmap=cmap, extent=(-1, 1, -1, 1))
+    ax.xaxis.set_major_locator(ticker.NullLocator())
+    ax.yaxis.set_major_locator(ticker.NullLocator())
+    ax.vlines(np.linspace(*sm.x_domain, num=sm.blocks_geometry[1] + 1)[1:-1], ymin=sm.y_domain[0],
+              ymax=sm.y_domain[1],
+              linestyle="dashed", alpha=0.7, color="black")
+    ax.hlines(np.linspace(*sm.y_domain, num=sm.blocks_geometry[0] + 1)[1:-1], xmin=sm.x_domain[0],
+              xmax=sm.x_domain[1],
+              linestyle="dashed", alpha=0.7, color="black")
+    save_fig_without_white(f"{presentation_path}/solution_avg_{i}.png")
+
+    measurements_avg = measurements_avg.ravel().tolist() + [0]
+    norm = matplotlib.colors.Normalize(vmin=0, vmax=np.max(measurements_avg))
+    plt.figure()
+    sns.barplot(data=pd.DataFrame(np.transpose([measurements_avg,
+                                                list(range(1, num_cells_per_dim ** 2 + 2))]),
+                                  columns=["measurements", "sensors", ]),
+                x="sensors", y="measurements", palette={j + 1: cmapf(norm(m)) for j, m in enumerate(measurements_avg)})
+    plt.ylim([0, 0.11])
+    plt.xlabel("")
+    plt.ylabel("")
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
+    plt.box(False)
+    plt.savefig(f"{presentation_path}/barplot_measurements_avg_{i}.png", bbox_inches='tight', pad_inches=0,
+                transparent=True)
+    plt.close()
 
 # ============= ============= ============= ============= #
 # State estimation
@@ -325,6 +335,7 @@ with open(f"{presentation_path}/metadata.json", "w") as f:
         {
             "parameters_dict": parameters_dict,
             "parameters_optim_dict": parameters_optim_dict,
+            "parameters_avg_dict": parameters_avg_dict,
             "parameters_se_dict": parameters_se_dict,
             "num_snapshots_optim": num_snapshots_optim,
             "num_snapshots": num_snapshots,
