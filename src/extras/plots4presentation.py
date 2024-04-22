@@ -10,6 +10,7 @@ from matplotlib.collections import LineCollection
 import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from src import config
 from src.lib.SolutionsManagers import SolutionsManagerFEM
@@ -148,6 +149,114 @@ plt.gca().add_collection(LineCollection(segs2, edgecolors="white", linewidths=1.
 save_fig_without_white(f"{presentation_path}/grid.png")
 
 # ============= ============= ============= ============= #
+# Limiting solutions
+# ============= ============= ============= ============= #
+sm_lm = SolutionsManagerFEM(blocks_geometry=(5, 5), N=10, num_cores=1)
+T = np.logspace(0, 3, num_snapshots)
+parameters_ls_dict = list()
+infty_subdomains = [(0, 0), (1, 2), (3, 0), (4, 4)]
+for i, t in tqdm(enumerate(T)):
+    # define the matrix of diffusion coefficients \theta for each solution u to be computed.
+    y = np.ones((1, 5, 5))
+    for subdomain in infty_subdomains:
+        y[(0,) + subdomain] = t
+    y = np.array(y, dtype=int)
+    parameters_ls_dict.append(y[0].tolist())
+    # generate as many solutions as diffusion coefficients matrices given
+    u = sm_lm.generate_solutions(a2try=y[:, ::-1])
+
+    plot_solutions_together(
+        sm_lm,
+        diffusion_coefficients=np.array(y),
+        solutions=u,
+        num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+        contour_levels=contour_levels,
+        axes_xy_proportions=axes_xy_proportions,
+        titles=False,
+        colorbar=False,
+        measurement_points=None,
+        cmap=cmap, add_grid=False)
+    save_fig_without_white(f"{presentation_path}/solutions_lim_sol_{i}.png")
+
+for subdomain in infty_subdomains:
+    y = np.ones((1, 5, 5))
+    y[(0,) + subdomain] = t
+    y = np.array(y, dtype=int)
+    parameters_ls_dict.append(y[0].tolist())
+    # generate as many solutions as diffusion coefficients matrices given
+    u = sm_lm.generate_solutions(a2try=y[:, ::-1])
+
+    plot_solutions_together(
+        sm_lm,
+        diffusion_coefficients=np.array(y),
+        solutions=u,
+        num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+        contour_levels=contour_levels,
+        axes_xy_proportions=axes_xy_proportions,
+        titles=False,
+        colorbar=False,
+        measurement_points=None,
+        cmap=cmap, add_grid=False)
+    save_fig_without_white(f"{presentation_path}/solutions_lim_sol_{'_'.join(map(str, subdomain))}.png")
+
+y = np.ones((1, 5, 5))
+y = np.array(y, dtype=int)
+parameters_ls_dict.append(y[0].tolist())
+# generate as many solutions as diffusion coefficients matrices given
+u = sm_lm.generate_solutions(a2try=y[:, ::-1])
+
+plot_solutions_together(
+    sm_lm,
+    diffusion_coefficients=np.array(y),
+    solutions=u,
+    num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+    contour_levels=contour_levels,
+    axes_xy_proportions=axes_xy_proportions,
+    titles=False,
+    colorbar=False,
+    measurement_points=None,
+    cmap=cmap, add_grid=False)
+save_fig_without_white(f"{presentation_path}/solutions_lim_sol_11.png")
+
+plot_solutions_together(
+    sm_lm,
+    diffusion_coefficients=np.array(y),
+    solutions=u * 0,
+    num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+    contour_levels=contour_levels,
+    axes_xy_proportions=axes_xy_proportions,
+    titles=False,
+    colorbar=False,
+    measurement_points=None,
+    cmap=cmap, add_grid=False)
+save_fig_without_white(f"{presentation_path}/solutions_lim_sol_infinf.png")
+
+# ============= ============= ============= ============= #
+# Not UEA assumption
+# ============= ============= ============= ============= #
+T = np.logspace(0, 3, num_snapshots)
+parameters_inf_dict = list()
+for i, t in enumerate(T):
+    # define the matrix of diffusion coefficients \theta for each solution u to be computed.
+    y = np.array([[[1, 1], [1, t]]], dtype=int)
+    parameters_inf_dict.append(y[0].tolist())
+    # generate as many solutions as diffusion coefficients matrices given
+    u = sm.generate_solutions(a2try=y[:, ::-1])
+
+    plot_solutions_together(
+        sm,
+        diffusion_coefficients=np.array(y),
+        solutions=u,
+        num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+        contour_levels=contour_levels,
+        axes_xy_proportions=axes_xy_proportions,
+        titles=False,
+        colorbar=False,
+        measurement_points=None,
+        cmap=cmap, add_grid=True)
+    save_fig_without_white(f"{presentation_path}/solutions_inf_{i}.png")
+
+# ============= ============= ============= ============= #
 # Multiple samples
 # ============= ============= ============= ============= #
 T = np.linspace(0, 2 * np.pi, num_snapshots)
@@ -159,7 +268,6 @@ for i, t in enumerate(T):
     parameters_dict.append(y[0].tolist())
     # generate as many solutions as diffusion coefficients matrices given
     u = sm.generate_solutions(a2try=y[:, ::-1])
-    print("Solutions shape: ", np.shape(u))
 
     plot_solutions_together(
         sm,
@@ -285,7 +393,7 @@ for i, t in enumerate(T):
 # ============= ============= ============= ============= #
 solutions_offline = sm.generate_solutions(a2try=np.array(
     [space_y(t, r) for t, r in zip(np.random.uniform(0, np.pi * 2, size=100), np.random.uniform(0, 4.5, size=100))]))
-rb = reduced_basis_generator_pca(solutions_offline, number_of_reduced_base_elements=4)
+rb = reduced_basis_generator_pca(solutions_offline, number_of_reduced_base_elements=2)
 T = np.linspace(0, 2 * np.pi, num_snapshots_optim)
 parameters_se_dict = list()
 for i, t in enumerate(T):
@@ -333,6 +441,9 @@ for i, t in enumerate(T):
 with open(f"{presentation_path}/metadata.json", "w") as f:
     json.dump(
         {
+            "infty_subdomains": infty_subdomains,
+            "parameters_ls_dict": parameters_ls_dict,
+            "parameters_inf_dict": parameters_inf_dict,
             "parameters_dict": parameters_dict,
             "parameters_optim_dict": parameters_optim_dict,
             "parameters_avg_dict": parameters_avg_dict,
