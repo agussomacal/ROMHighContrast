@@ -341,7 +341,7 @@ for i in range(number_of_measures):
 # Inverse problem averages
 # ============= ============= ============= ============= #
 num_cells_per_dim = 7
-sub_sampling = 5
+sub_sampling = 5  # reconstruction factor
 n = sub_sampling * num_cells_per_dim
 points_avg = measurements_sampling_method_grid(n ** 2, xlim=sm.x_domain, ylim=sm.y_domain)
 
@@ -358,6 +358,8 @@ for i, t in enumerate(T):
         np.concatenate((points_avg[:, 0].reshape((-1, 1)), points_avg[:, 1].reshape((-1, 1))), axis=1),
         solutions=[u]).ravel().tolist()
     measurements_avg = calculate_averages_from_image(np.reshape(measurements_avg, (n, n)), num_cells_per_dim)
+    if i == 25:  # TODO: harcoded i=25
+        np.save("/home/callum/Repos/GitHub/SubCellResolution/Results/Presentation/solution_avg_25", measurements_avg)
     uavg = make_image_high_resolution(measurements_avg, num_cells_per_dim)
     fig, ax = plt.subplots(1, 1, figsize=axes_xy_proportions)
     ax.imshow(uavg, origin='lower', cmap=cmap, extent=(-1, 1, -1, 1))
