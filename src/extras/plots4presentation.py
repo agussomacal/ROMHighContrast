@@ -60,15 +60,16 @@ def barplot_measurements(filename, measurements, max_measurements):
                 x="sensors", y="measurements", palette={j + 1: cmapf(norm(m)) for j, m in enumerate(measurements)})
     plt.ylim([0, 0.11])
     # plt.xlim([1, number_of_measures])
-    plt.xlabel("")
-    plt.ylabel("")
+    plt.xlabel(r"")
+    plt.ylabel(r"")
     # plt.xlabel(r"Sensors $i$")
     # plt.ylabel(r"Measurements $z_i = \ell_i(u)$")
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     plt.box(False)
-    plt.savefig(filename, bbox_inches='tight', pad_inches=0,
-                transparent=True)
+    # ax.xaxis.label.set_color('white')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, transparent=True)
     plt.close()
 
 
@@ -358,9 +359,8 @@ for i, t in enumerate(T):
         np.concatenate((points_avg[:, 0].reshape((-1, 1)), points_avg[:, 1].reshape((-1, 1))), axis=1),
         solutions=[u]).ravel().tolist()
     measurements_avg = calculate_averages_from_image(np.reshape(measurements_avg, (n, n)), num_cells_per_dim)
-    if i == 25:  # TODO: harcoded i=25
-        np.save("/home/callum/Repos/GitHub/SubCellResolution/Results/Presentation/solution_avg_25", measurements_avg)
     uavg = make_image_high_resolution(measurements_avg, num_cells_per_dim)
+
     fig, ax = plt.subplots(1, 1, figsize=axes_xy_proportions)
     ax.imshow(uavg, origin='lower', cmap=cmap, extent=(-1, 1, -1, 1))
     ax.xaxis.set_major_locator(ticker.NullLocator())
@@ -373,6 +373,37 @@ for i, t in enumerate(T):
               linestyle="dashed", alpha=0.7, color="black")
     save_fig_without_white(f"{presentation_path}/solution_avg_{i}.png")
 
+    if i == 25:  # TODO: harcoded i=25
+        path2subcell = "/home/callum/Repos/SlidesMaker/DefenseSlides/Material/SubCell"
+        np.save(f"{path2subcell}/solution_avg_25", measurements_avg)
+        fig, ax = plt.subplots(1, 1, figsize=axes_xy_proportions)
+        ax.imshow(uavg/np.max(u), origin='lower', cmap="viridis", extent=(-1, 1, -1, 1), vmin=-1, vmax=1)
+        ax.xaxis.set_major_locator(ticker.NullLocator())
+        ax.yaxis.set_major_locator(ticker.NullLocator())
+        ax.vlines(np.linspace(*sm.x_domain, num=sm.blocks_geometry[1] + 1)[1:-1], ymin=sm.y_domain[0],
+                  ymax=sm.y_domain[1],
+                  linestyle="dashed", alpha=0.7, color="black")
+        ax.hlines(np.linspace(*sm.y_domain, num=sm.blocks_geometry[0] + 1)[1:-1], xmin=sm.x_domain[0],
+                  xmax=sm.x_domain[1],
+                  linestyle="dashed", alpha=0.7, color="black")
+        save_fig_without_white(f"{path2subcell}/solution_avg.png")
+
+        plot_solutions_together(
+            sm,
+            diffusion_coefficients=np.array(y),
+            solutions=u/np.max(u),
+            num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+            contour_levels=contour_levels,
+            axes_xy_proportions=axes_xy_proportions,
+            titles=False,
+            colorbar=False,
+            vmin=-1, vmax=1,
+            measurement_points=None, measurements_color=measurements_color,
+            cmap=matplotlib.colormaps.get_cmap("viridis"), add_grid=True)
+        save_fig_without_white(f"{path2subcell}/solution.png")
+        break
+
+
     measurements_avg = measurements_avg.ravel().tolist() + [0]
     norm = matplotlib.colors.Normalize(vmin=0, vmax=np.max(measurements_avg))
     plt.figure()
@@ -384,6 +415,7 @@ for i, t in enumerate(T):
     plt.xlabel("")
     plt.ylabel("")
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
     plt.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
     plt.box(False)
     plt.savefig(f"{presentation_path}/barplot_measurements_avg_{i}.png", bbox_inches='tight', pad_inches=0,
@@ -416,6 +448,19 @@ for i, t in enumerate(T):
         measurement_points=points,
         cmap="coolwarm", add_grid=True)
     save_fig_without_white(f"{presentation_path}/state_estimation_solutions_points_{i}.png")
+
+    plot_solutions_together(
+        sm,
+        diffusion_coefficients=np.array(y),
+        solutions=u,
+        num_points_per_dim_to_plot=num_points_per_dim_to_plot,
+        contour_levels=0,
+        axes_xy_proportions=axes_xy_proportions,
+        titles=False,
+        colorbar=False, measurements_color=measurements_color,
+        measurement_points=None,
+        cmap="coolwarm", add_grid=True)
+    save_fig_without_white(f"{presentation_path}/state_estimation_solutions_{i}.png")
 
     measurements = sm.evaluate_solutions(
         np.concatenate((points[:, 0].reshape((-1, 1)), points[:, 1].reshape((-1, 1))), axis=1),
@@ -453,7 +498,9 @@ with open(f"{presentation_path}/metadata.json", "w") as f:
             "num_snapshots_optim": num_snapshots_optim,
             "num_snapshots": num_snapshots,
             "number_of_measures": number_of_measures,
-            "Vdim": sm.vspace_dim
+            "Vdim": sm.vspace_dim,
+            "num_cells_per_dim": num_cells_per_dim,
+            "sub_sampling": sub_sampling
         },
         f
     )

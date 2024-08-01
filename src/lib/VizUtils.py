@@ -49,7 +49,7 @@ def plot_solution(ax, x, y, u_reshaped, sm, contour_levels=0, vmin=None, vmax=No
 
 def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_per_dim_to_plot=100, contour_levels=0,
                             axes_xy_proportions=AXES_PROPORTIONS, titles=None, colorbar=False, measurement_points=None,
-                            cmap=None, add_grid=True, measurements_color="white"):
+                            cmap=None, add_grid=True, measurements_color="white", vmin=None, vmax=None, ):
     x, y = np.meshgrid(np.linspace(*sm.x_domain, num=num_points_per_dim_to_plot),
                        np.linspace(*sm.y_domain, num=num_points_per_dim_to_plot))
     for i, (ax, u) in enumerate(
@@ -61,7 +61,7 @@ def plot_solutions_together(sm, diffusion_coefficients, solutions, num_points_pe
             elif titles is not None:
                 ax.set_title(titles[i])
         plot_solution(ax, x, y, u.reshape((num_points_per_dim_to_plot, num_points_per_dim_to_plot)), sm, contour_levels,
-                      colorbar=colorbar, cmap=cmap, add_grid=add_grid)
+                      colorbar=colorbar, cmap=cmap, add_grid=add_grid, vmax=vmax, vmin=vmin)
         ax.xaxis.set_major_locator(ticker.NullLocator())
         ax.yaxis.set_major_locator(ticker.NullLocator())
 
